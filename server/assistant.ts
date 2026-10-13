@@ -1,4 +1,5 @@
 import { generateText, Output } from "ai";
+import { getVercelOidcTokenSync } from "@vercel/functions/oidc";
 import { z } from "zod";
 import { HttpError } from "./storage.js";
 export const MODELS = {
@@ -6,8 +7,14 @@ export const MODELS = {
   anthropic: "anthropic/claude-sonnet-5.5",
   grok: "spacexai/grok-4.7",
 } as const;
-export const aiReady = () =>
-  Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+export const aiReady = () => {
+  if (process.env.AI_GATEWAY_API_KEY) return true;
+  try {
+    return Boolean(getVercelOidcTokenSync());
+  } catch {
+    return false;
+  }
+};
 const inputSchema = z.object({
   mode: z.enum([
     "ask",

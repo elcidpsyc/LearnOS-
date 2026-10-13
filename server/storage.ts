@@ -6,6 +6,9 @@ export const storageReady = () =>
   Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 export const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
+// Blob downloads can weaken the same validator when HTTP compression is used.
+// Conditional writes require the original quoted storage validator.
+const storageETag = (value: string) => value.replace(/^W\//, "");
 export function bearer(request: Request) {
   const token =
     request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
@@ -43,13 +46,14 @@ export async function readWorkspace(token: string) {
   const result = await get(`spaces/${hash(token)}/vault.json`, {
     access: "private",
     useCache: false,
+    headers: { "Accept-Encoding": "identity" },
   });
   if (!result || result.statusCode !== 200) return null;
   return {
     data: vaultSchema.parse(
       await new Response(result.stream).json(),
     ) as VaultData,
-    etag: result.blob.etag,
+    etag: storageETag(result.blob.etag),
   };
 }
 export async function writeWorkspace(
@@ -58,7 +62,7 @@ export async function writeWorkspace(
   etag?: string,
 ) {
   const current = await readWorkspace(token);
-  if (current && (!etag || etag !== current.etag))
+  if (current && (!etag || storageETag(etag) !== current.etag))
     throw new HttpError(
       409,
       "O espaço mudou. Sincronize novamente antes de gravar.",
@@ -113,7 +117,7 @@ export async function limit(key: string, count: number, seconds: number) {
   let etag: string | undefined;
   if (previous?.statusCode === 200) {
     used = Number((await new Response(previous.stream).json()).count) || 0;
-    etag = previous.blob.etag;
+    etag = storageETag(previous.blob.etag);
   }
   if (used >= count)
     throw new HttpError(
