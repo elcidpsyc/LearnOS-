@@ -1,390 +1,701 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import {
+  useState,
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   ChevronDown,
-  ChevronUp,
-  Sparkles,
-  Bookmark,
-  Share2,
-  Trash2,
-  Send,
-  Type,
+  ArrowLeft,
+  ArrowUpRight,
+  NotebookPen,
+  Maximize2,
+  Minimize2,
+  Headphones,
+  VolumeX,
   BookOpen,
-  MessageSquareQuote
+  ArrowRight,
+  Languages,
+  Sparkles,
+  MessageCircle,
+  Trash2,
+  Plus,
+  Check,
+  RotateCcw,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useVault } from "@/lib/vault/store";
-import { askAboutText } from "@/lib/study/ai";
-
-interface StudyTabProps {
-  aiOn?: boolean;
+import type { Paragraph, MarginNote, Source } from "@/lib/vault/types";
+import { assist } from "@/lib/study/ai";
+import { getFile, download } from "@/lib/vault/files";
+import { ReaderSettings } from "./reader-settings";
+import { TranslatorPopup } from "./translator-popup";
+import { AddSourceModal } from "./add-source-modal";
+import { Empty, Modal, Overline } from "./ui";
+function AnnotatedText({
+  paragraph,
+  marks,
+}: {
+  paragraph: Paragraph;
+  marks: MarginNote[];
+}) {
+  const highlights = marks
+    .filter((m) => m.type === "highlight" && m.quote)
+    .map((m) => ({
+      mark: m,
+      start: m.start ?? paragraph.text.indexOf(m.quote!),
+      end: m.end ?? paragraph.text.indexOf(m.quote!) + m.quote!.length,
+    }))
+    .filter((m) => m.start >= 0)
+    .sort((a, b) => a.start - b.start);
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const h of highlights) {
+    if (h.start < cursor) continue;
+    parts.push(paragraph.text.slice(cursor, h.start));
+    parts.push(
+      <mark
+        key={h.mark.id}
+        style={{ background: h.mark.color ?? "var(--highlight)" }}
+      >
+        {paragraph.text.slice(h.start, h.end)}
+      </mark>,
+    );
+    cursor = h.end;
+  }
+  parts.push(paragraph.text.slice(cursor));
+  return <>{parts}</>;
 }
-
-export function StudyTab({ aiOn = true }: StudyTabProps) {
-  const sources = useVault((s) => s.sources);
-  const activeSourceId = useVault((s) => s.activeSourceId);
-  const setActiveSourceId = useVault((s) => s.setActiveSourceId);
-  const marginNotes = useVault((s) => s.marginNotes);
-  const addMarginNote = useVault((s) => s.addMarginNote);
-  const deleteMarginNote = useVault((s) => s.deleteMarginNote);
-  const openPopup = useVault((s) => s.openPopup);
-
-  const currentSource = sources.find((s) => s.id === activeSourceId) || sources[0];
-  const activeMarginNotes = marginNotes.filter((m) => m.sourceId === currentSource.id);
-
-  const [briefOpen, setBriefOpen] = useState(false);
-  const [fontMode, setFontMode] = useState<"serif" | "sans">("serif");
-  const [fontSize, setFontSize] = useState<"sm" | "md" | "lg">("md");
-  const [quickQuestion, setQuickQuestion] = useState("");
-  const [askMode, setAskMode] = useState<"quick" | "deep">("quick");
-  const [isAsking, setIsAsking] = useState(false);
-  const [selectedParagraph, setSelectedParagraph] = useState<number | null>(null);
-
-  const handleTextSelection = (paragraphId: number) => {
+export function StudyTab() {
+  const {
+    sources,
+    activeSourceId,
+    setActiveSourceId,
+    notes,
+    marginNotes,
+    settings,
+    saveSettings,
+    setTab,
+    setSelection,
+    selection,
+    updateSource,
+    deleteMarginNote,
+    addNote,
+    addCard,
+    addMarginNote,
+    selectNote,
+  } = useVault((s) => s);
+  const source = sources.find((s) => s.id === activeSourceId) ?? sources[0];
+  const [preferences, setPreferences] = useState(false);
+  const [notebook, setNotebook] = useState(false);
+  const [brief, setBrief] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [depth, setDepth] = useState<"quick" | "deep">("quick");
+  const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState("");
+  const [error, setError] = useState("");
+  const [speaking, setSpeaking] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [fileUrl, setFileUrl] = useState("");
+  const observed = useRef<number>(0);
+  const remembered = useRef("");
+  useEffect(() => {
+    setAnswer("");
+    setQuestion("");
+    setBrief(false);
+    setFileUrl("");
+    remembered.current = "";
+    observed.current = 0;
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+    let url = "";
+    let cancelled = false;
+    if (source?.fileId)
+      void getFile(source.fileId).then((file) => {
+        if (!cancelled && file) {
+          url = URL.createObjectURL(file);
+          setFileUrl(url);
+        }
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+      window.speechSynthesis?.cancel();
+    };
+  }, [source?.id]);
+  useEffect(() => {
+    if (!source?.paragraphs.length) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          if (entry.isIntersecting) {
+            const n = Number((entry.target as HTMLElement).dataset.paragraph);
+            const index = source.paragraphs.findIndex((p) => p.id === n);
+            const progress = Math.round(
+              ((index + 1) / source.paragraphs.length) * 100,
+            );
+            if (progress > observed.current) {
+              observed.current = progress;
+              updateSource(source.id, {
+                progress: Math.max(source.progress, progress),
+                lastParagraph: n,
+                lastReadAt: new Date().toISOString(),
+              });
+            }
+          }
+      },
+      { rootMargin: "-20% 0px -25% 0px", threshold: 0.2 },
+    );
+    document
+      .querySelectorAll("[data-paragraph]")
+      .forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [source?.id, source?.paragraphs.length, updateSource]);
+  if (!source)
+    return (
+      <Empty
+        title="Sua próxima leitura começa aqui."
+        text="Adicione uma fonte para abrir o leitor."
+        action={
+          <button className="button" onClick={() => setTab("fontes")}>
+            Abrir biblioteca
+          </button>
+        }
+      />
+    );
+  const sourceNotes = notes.filter((n) => n.fonte === source.id);
+  const sourceMarks = marginNotes.filter((n) => n.sourceId === source.id);
+  const capture = () => {
     const selection = window.getSelection();
-    const text = selection?.toString()?.trim();
-    if (!text || text.length < 2) return;
-
-    // Get position for popover
-    let left = 20;
-    let top = 180;
-    if (selection && selection.rangeCount > 0) {
-      const rect = selection.getRangeAt(0).getBoundingClientRect();
-      left = rect.left;
-      top = rect.bottom + 8;
-    }
-
-    openPopup({
-      text,
-      left,
-      top,
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    const getParagraph = (node: Node) =>
+      (node.nodeType === Node.ELEMENT_NODE
+        ? (node as Element)
+        : node.parentElement
+      )?.closest("[data-paragraph]") as HTMLElement | null;
+    const start = getParagraph(range.startContainer),
+      end = getParagraph(range.endContainer);
+    if (!start || start !== end) return;
+    const paragraphId = Number(start.dataset.paragraph);
+    const text = selection.toString().trim();
+    if (!text) return;
+    const prefix = range.cloneRange();
+    prefix.selectNodeContents(start);
+    prefix.setEnd(range.startContainer, range.startOffset);
+    const raw = selection.toString();
+    const offset =
+      prefix.toString().length + (raw.length - raw.trimStart().length);
+    const rect = range.getBoundingClientRect();
+    setSelection({
+      sourceId: source.id,
       paragraphId,
-      mode: "explain"
+      text,
+      start: offset,
+      end: offset + text.length,
+      left: rect.left,
+      top: rect.bottom,
+      page: source.paragraphs.find((p) => p.id === paragraphId)?.page,
     });
   };
-
-  const handleAskWholeText = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickQuestion.trim() || isAsking) return;
-
-    setIsAsking(true);
-    const q = quickQuestion.trim();
-    setQuickQuestion("");
-
-    const answer = await askAboutText(q, currentSource.briefSummary + " " + currentSource.claims.join(" "));
-
-    addMarginNote({
-      sourceId: currentSource.id,
-      paragraphId: selectedParagraph || 1,
-      type: "qa",
-      title: `Pergunta: ${q}`,
-      content: answer,
-      quote: askMode === "deep" ? "Análise Profunda" : "Pergunta Rápida"
-    });
-
-    setIsAsking(false);
+  const ask = async () => {
+    if (!question.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    setAnswer("");
+    try {
+      const context = source.paragraphs
+        .map((p) => `${p.page ? `[p. ${p.page}]` : `[§ ${p.id}]`} ${p.text}`)
+        .join("\n\n");
+      const response = await assist(
+        "ask",
+        question,
+        context,
+        `${source.author}. ${source.title}. Modo ${depth === "deep" ? "aprofundado, com limites e conexões" : "breve"}.`,
+      );
+      setAnswer(response.answer);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível responder.");
+    } finally {
+      setBusy(false);
+    }
   };
-
+  const speak = () => {
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    if (!("speechSynthesis" in window)) {
+      toast.error("A leitura em voz alta não está disponível neste navegador.");
+      return;
+    }
+    const text = source.paragraphs.map((p) => p.text).join("\n");
+    if (!text) {
+      toast.error("Esta fonte não tem texto extraído para ouvir.");
+      return;
+    }
+    const chunks = text.match(/.{1,900}(?:[.!?]\s|$)|.{1,900}/gs) ?? [text];
+    let index = 0;
+    setSpeaking(true);
+    const next = () => {
+      if (index >= chunks.length) {
+        setSpeaking(false);
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(chunks[index++]);
+      utterance.lang = /\b(the|and|of)\b/i.test(text) ? "en-US" : "pt-BR";
+      utterance.rate = 0.9;
+      utterance.onend = next;
+      utterance.onerror = () => setSpeaking(false);
+      speechSynthesis.speak(utterance);
+    };
+    next();
+  };
+  const goTo = (paragraphId: number) => {
+    setNotebook(false);
+    requestAnimationFrame(() =>
+      document
+        .querySelector(`[data-paragraph="${paragraphId}"]`)
+        ?.scrollIntoView({
+          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "instant"
+            : "smooth",
+          block: "center",
+        }),
+    );
+  };
+  const css = {
+    "--reading-width": `${settings.width}px`,
+    "--reading-size": `${settings.fontSize}px`,
+    "--reading-line": settings.lineHeight,
+    "--reading-font":
+      settings.font === "serif" ? "var(--font-serif)" : "var(--font-sans)",
+  } as CSSProperties;
   return (
-    <div className="space-y-8">
-      {/* Source Switcher Header */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">
-              <span className="size-1.5 rounded-full bg-emerald-400" />
-              {currentSource.topic}
-            </span>
-            <span className="text-xs text-[#71717a]">· {currentSource.readTime}</span>
-          </div>
-
-          {/* Typography & Switcher Tools */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setFontMode((f) => (f === "serif" ? "sans" : "serif"))}
-              className="flex items-center gap-1 rounded-xl border border-[#27272a] bg-[#18181b] px-2.5 py-1 text-xs text-[#a1a1aa] transition hover:border-white/20 hover:text-white"
-              title="Alternar tipografia"
-            >
-              <Type className="size-3.5" />
-              <span className="font-mono text-[10px] uppercase">{fontMode}</span>
-            </button>
-
+    <div
+      className={`reader-page ${settings.indent ? "reader-indented" : ""}`}
+      style={css}
+    >
+      <div className="reader-topline">
+        <button className="text-button" onClick={() => setTab("fontes")}>
+          <ArrowLeft size={14} />
+          Biblioteca
+        </button>
+        <div className="reader-actions">
+          <button
+            className="icon-button aa-button"
+            aria-label="Personalizar leitura"
+            onClick={() => setPreferences(true)}
+          >
+            Aa
+          </button>
+          <button className="reader-tool" onClick={() => setNotebook(true)}>
+            <NotebookPen size={15} />
+            <span>Caderno</span>
+            <i>
+              {sourceNotes.length +
+                sourceMarks.filter((m) => m.type === "highlight").length}
+            </i>
+          </button>
+          <button
+            className="icon-button"
+            aria-label={settings.focus ? "Sair do modo foco" : "Modo foco"}
+            onClick={() => saveSettings({ focus: !settings.focus })}
+          >
+            {settings.focus ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+          <button
+            className="icon-button"
+            aria-label={
+              speaking ? "Parar leitura em voz alta" : "Ouvir leitura"
+            }
+            onClick={speak}
+          >
+            {speaking ? <VolumeX size={16} /> : <Headphones size={16} />}
+          </button>
+        </div>
+      </div>
+      <header className="reader-heading">
+        <Overline>
+          {source.topic} {source.excerptOnly ? "· RECORTES SALVOS" : ""}
+        </Overline>
+        <h1>{source.title}</h1>
+        <div className="reader-description">
+          <span>
+            {source.author}
+            {source.publishedYear ? ` · ${source.publishedYear}` : ""}
+            <small>
+              {source.readTime} · {source.paragraphs.length} trechos
+              {source.pages ? ` · ${source.pages} páginas` : ""}
+            </small>
+          </span>
+          <div>
+            {source.url && (
+              <a
+                className="text-button"
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Original
+                <ArrowUpRight size={13} />
+              </a>
+            )}
             <select
-              aria-label="Selecionar texto para estudo"
-              value={currentSource.id}
+              aria-label="Escolher fonte para leitura"
+              value={source.id}
               onChange={(e) => setActiveSourceId(e.target.value)}
-              className="rounded-xl border border-[#27272a] bg-[#18181b] px-2.5 py-1 text-xs text-[#fafafa] outline-none transition focus:border-white/40 cursor-pointer"
             >
               {sources.map((s) => (
-                <option key={s.id} value={s.id} className="bg-[#18181b] text-white">
-                  {s.title.slice(0, 30)}...
+                <option key={s.id} value={s.id}>
+                  {s.title}
                 </option>
               ))}
             </select>
           </div>
         </div>
-
-        {/* Title */}
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-white leading-tight md:text-3xl">
-          {currentSource.title}
-        </h2>
-
-        <div className="flex items-center justify-between text-xs text-[#a1a1aa] pb-3 border-b border-[#27272a]">
-          <p>
-            Por <span className="text-white font-medium">{currentSource.author}</span> · {currentSource.publishedYear}
-          </p>
-          <div className="flex items-center gap-2">
-            <div className="w-16 h-1.5 rounded-full bg-[#27272a] overflow-hidden">
-              <div
-                className="h-full bg-white transition-all duration-500 rounded-full"
-                style={{ width: `${currentSource.progress}%` }}
-              />
-            </div>
-            <span className="text-[11px] font-mono text-[#71717a]">{currentSource.progress}% lido</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Collapsible Brief Accordion (Gloss pattern) */}
-      <div className="rounded-2xl border border-[#27272a] bg-[#18181b] p-4 transition-colors">
-        <button
-          type="button"
-          onClick={() => setBriefOpen(!briefOpen)}
-          className="flex w-full items-center justify-between text-left"
-        >
-          <div className="flex items-center gap-2">
-            <div className="size-2 rounded-full bg-amber-400" />
-            <span className="text-xs font-bold uppercase tracking-wider text-white">
-              Brief Executivo & Teses Chave ({currentSource.claims.length} premissas)
-            </span>
-          </div>
-          {briefOpen ? (
-            <ChevronUp className="size-4 text-[#71717a]" />
-          ) : (
-            <ChevronDown className="size-4 text-[#71717a]" />
-          )}
+      </header>
+      <section className="reading-brief">
+        <button onClick={() => setBrief(!brief)} aria-expanded={brief}>
+          <span>
+            Visão geral{" "}
+            <small>
+              {source.claims.length
+                ? `${source.claims.length} ideias centrais`
+                : `${sourceNotes.length} notas no caderno`}
+            </small>
+          </span>
+          <ChevronDown size={15} className={brief ? "rotated" : ""} />
         </button>
-
-        <AnimatePresence>
-          {briefOpen && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="pt-3 mt-3 border-t border-[#27272a]/60 space-y-3 text-xs leading-relaxed text-[#d4d4d8]">
-                <p className="font-medium text-white italic bg-[#27272a]/40 p-2.5 rounded-xl border border-white/5">
-                  "{currentSource.briefSummary}"
-                </p>
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#71717a]">
-                    Premissas Centrais:
-                  </span>
-                  <ol className="list-decimal pl-4 space-y-1.5 text-[#a1a1aa]">
-                    {currentSource.claims.map((claim, idx) => (
-                      <li key={idx}>
-                        <span className="text-[#fafafa] font-medium">{claim}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Active Reading Layout */}
-      <div className="relative grid grid-cols-1 gap-8 lg:grid-cols-12">
-        {/* Main Text Content Column */}
-        <div className="lg:col-span-8 space-y-6">
-          <div className="text-[11px] font-mono uppercase tracking-widest text-[#71717a] flex items-center gap-2">
-            <BookOpen className="size-3.5" />
-            <span>Selecione qualquer palavra para traduzir, explicar ou criar card</span>
+        {brief && (
+          <div className="brief-content">
+            <p>
+              {source.briefSummary ||
+                "O material original e suas observações ficam separados, para você voltar à fonte sempre que precisar."}
+            </p>
+            {source.claims.length > 0 ? (
+              <ol>
+                {source.claims.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ol>
+            ) : (
+              <ul>
+                {sourceNotes.map((n) => (
+                  <li key={n.id}>{n.title}</li>
+                ))}
+              </ul>
+            )}
+            {source.excerptOnly && (
+              <small>
+                Você está lendo recortes preservados. Importe a obra para
+                consultar o arquivo integral.
+              </small>
+            )}
           </div>
-
-          <article
-            className={`space-y-6 leading-relaxed transition-all ${
-              fontMode === "serif" ? "font-serif text-[17px] text-[#e4e4e7]" : "font-sans text-[15px] text-[#f4f4f5]"
-            } ${fontSize === "lg" ? "text-lg" : fontSize === "sm" ? "text-sm" : ""}`}
-            onMouseUp={() => handleTextSelection(selectedParagraph || 1)}
-            onTouchEnd={() => handleTextSelection(selectedParagraph || 1)}
-          >
-            {currentSource.paragraphs.map((p) => {
-              const hasNotes = activeMarginNotes.some((m) => m.paragraphId === p.id);
-              const isSelected = selectedParagraph === p.id;
-
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => setSelectedParagraph(p.id)}
-                  className={`group relative rounded-2xl p-3 -mx-3 transition-colors ${
-                    isSelected ? "bg-white/[0.04] ring-1 ring-white/10" : "hover:bg-white/[0.02]"
-                  }`}
-                >
-                  {/* Paragraph Number Badge */}
-                  <span
-                    className={`absolute -left-7 top-3 select-none font-mono text-[11px] transition-colors ${
-                      hasNotes
-                        ? "text-amber-400 font-bold"
-                        : "text-[#52525b] group-hover:text-[#a1a1aa]"
-                    }`}
+        )}
+      </section>
+      {source.lastParagraph && source.progress < 100 && (
+        <button
+          className="continue-reading"
+          onClick={() => goTo(source.lastParagraph!)}
+        >
+          Continuar do trecho {source.lastParagraph}
+          <ArrowRight size={13} />
+        </button>
+      )}
+      {!source.paragraphs.length && (
+        <div className="file-reading">
+          {fileUrl && source.mime?.startsWith("image/") ? (
+            <img src={fileUrl} alt={source.title} />
+          ) : fileUrl && source.mime?.startsWith("video/") ? (
+            <video src={fileUrl} controls />
+          ) : fileUrl && source.mime?.startsWith("audio/") ? (
+            <audio src={fileUrl} controls />
+          ) : (
+            <Empty
+              title="O original continua com você."
+              text={
+                source.fileId
+                  ? "Este arquivo não tem texto extraído. Abra o original para consultar."
+                  : "Esta obra está no catálogo. Adicione o arquivo ou cole um recorte para ler aqui."
+              }
+              action={
+                fileUrl ? (
+                  <a
+                    className="button"
+                    href={fileUrl}
+                    download={source.fileName}
                   >
-                    {p.id}
-                  </span>
-
-                  <p className="relative">
-                    {p.firstLetterDrop ? (
-                      <>
-                        <span className="float-left mr-3 font-editorial text-5xl font-normal leading-none text-white select-none">
-                          {p.text[0]}
-                        </span>
-                        {p.text.slice(1)}
-                      </>
-                    ) : (
-                      p.text
-                    )}
-                  </p>
-
-                  {/* Paragraph quick trigger button */}
-                  <div className="mt-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openPopup({
-                          text: p.text.slice(0, 120),
-                          paragraphId: p.id,
-                          left: 40,
-                          top: 240,
-                          mode: "explain"
-                        });
-                      }}
-                      className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-medium text-[#d4d4d8] hover:bg-white/20 hover:text-white"
-                    >
-                      <Sparkles className="size-3 text-amber-300" />
-                      Analisar parágrafo {p.id}
-                    </button>
-                    {hasNotes && (
-                      <span className="text-[10px] font-medium text-amber-400">
-                        • Tem nota na margem
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </article>
+                    Baixar original
+                  </a>
+                ) : (
+                  <button className="button" onClick={() => setAdding(true)}>
+                    <Plus size={15} />
+                    Adicionar material
+                  </button>
+                )
+              }
+            />
+          )}
         </div>
-
-        {/* Gloss Margin Notes Column */}
-        <div className="lg:col-span-4 space-y-4">
-          <div className="rounded-2xl border border-dashed border-[#27272a] bg-[#18181b]/40 p-3.5">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-[#a1a1aa] mb-1">
-              Margem de Notas
-            </p>
-            <p className="text-[11px] text-[#71717a] leading-tight">
-              Glosses e respostas da IA ancoradas aos parágrafos da leitura.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {activeMarginNotes.length === 0 ? (
-              <div className="rounded-2xl border border-[#27272a] bg-[#18181b]/50 p-4 text-center text-xs text-[#71717a]">
-                Nenhuma anotação nesta página ainda. Selecione texto ou pergunte abaixo.
-              </div>
-            ) : (
-              activeMarginNotes.map((note) => (
-                <motion.div
-                  key={note.id}
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="group relative rounded-2xl border border-[#27272a] bg-[#18181b] p-3.5 transition hover:border-white/20 shadow-sm"
-                >
-                  <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5">
-                    <span className="flex items-center gap-1.5 text-[10px] font-mono uppercase text-amber-400 font-semibold">
-                      § {note.paragraphId} · {note.type === "explain" ? "Gloss" : "Q&A"}
-                    </span>
+      )}
+      <article
+        className="reader-body"
+        style={{ textAlign: settings.align }}
+        onMouseUp={capture}
+        onTouchEnd={() => requestAnimationFrame(capture)}
+      >
+        {source.paragraphs.map((p, index) => {
+          const marks = sourceMarks.filter((m) => m.paragraphId === p.id);
+          const paragraphNotes = sourceNotes.filter(
+            (n) =>
+              n.paragraphId === p.id && !marks.some((m) => m.noteId === n.id),
+          );
+          const count =
+            marks.filter((m) => m.type !== "highlight").length +
+            paragraphNotes.length;
+          return (
+            <section className="reader-row" key={p.id}>
+              <div className="paragraph-wrap">
+                <div className="paragraph-gutter">
+                  {settings.numbers && (
                     <button
-                      type="button"
-                      onClick={() => deleteMarginNote(note.id)}
-                      className="text-[#71717a] hover:text-red-400 transition-colors p-1"
-                      title="Excluir nota"
+                      className={count ? "has-margin" : ""}
+                      onClick={() =>
+                        document
+                          .getElementById(`margin-${p.id}`)
+                          ?.scrollIntoView({ block: "center" })
+                      }
+                      aria-label={`Trecho ${p.id}, ${count} anotações`}
                     >
-                      <Trash2 className="size-3" />
+                      {String(p.id).padStart(2, "0")}
                     </button>
-                  </div>
-
-                  {note.quote && (
-                    <p className="font-serif italic text-[11px] text-[#a1a1aa] mb-1.5 border-l-2 border-white/20 pl-2">
-                      "{note.quote}"
-                    </p>
                   )}
-
-                  <h4 className="text-xs font-semibold text-white mb-1">
-                    {note.title}
-                  </h4>
-                  <p className="text-xs text-[#d4d4d8] leading-relaxed">
-                    {note.content}
+                </div>
+                <p
+                  data-paragraph={p.id}
+                  className={index === 0 ? "drop-cap" : ""}
+                >
+                  <AnnotatedText paragraph={p} marks={marks} />
+                </p>
+                {p.page && (
+                  <small className="paragraph-page">PÁGINA {p.page}</small>
+                )}
+              </div>
+              <aside id={`margin-${p.id}`} className="paragraph-margin">
+                {marks
+                  .filter((m) => m.type !== "highlight")
+                  .map((m) => (
+                    <details
+                      key={m.id}
+                      className="margin-note"
+                      open={m.type === "note" || m.type === "explain"}
+                    >
+                      <summary>
+                        <span>
+                          {m.type === "qa"
+                            ? "PERGUNTA"
+                            : m.type === "reminder"
+                              ? "LEMBRETE"
+                              : m.type === "question"
+                                ? "EM ABERTO"
+                                : "NA MARGEM"}{" "}
+                          · § {p.id}
+                        </span>
+                        <ChevronDown size={11} />
+                      </summary>
+                      {m.quote && <blockquote>{m.quote}</blockquote>}
+                      <p>{m.content}</p>
+                      {m.reminder && (
+                        <small>
+                          Rever em {m.reminder.split("-").reverse().join("/")}
+                        </small>
+                      )}
+                      <button
+                        className="margin-delete"
+                        aria-label="Remover anotação"
+                        onClick={() => deleteMarginNote(m.id)}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </details>
+                  ))}
+                {paragraphNotes.map((n) => (
+                  <div key={n.id} className="margin-note canonical">
+                    <span>NOTA · {n.paginas || `§ ${p.id}`}</span>
+                    <button
+                      onClick={() => {
+                        selectNote(n.id);
+                        setTab("notas");
+                      }}
+                    >
+                      {n.title}
+                    </button>
+                  </div>
+                ))}
+                {index === 0 && count === 0 && (
+                  <p className="margin-hint">
+                    Esta margem é sua.
+                    <br />
+                    Selecione uma linha e guarde uma ideia.
                   </p>
-                </motion.div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Gloss Floating Bottom Ask Bar */}
-      <div className="sticky bottom-24 z-20 mx-auto max-w-2xl rounded-2xl border border-[#27272a] bg-[#18181b]/95 p-2 backdrop-blur-xl shadow-[0_10px_35px_rgba(0,0,0,0.8)]">
-        <form onSubmit={handleAskWholeText} className="flex items-center gap-2">
-          <div className="flex items-center gap-1 pl-2 text-[#71717a]">
-            <Sparkles className="size-4 text-amber-400" />
-          </div>
-
-          <input
-            type="text"
-            value={quickQuestion}
-            onChange={(e) => setQuickQuestion(e.target.value)}
-            placeholder="Perguntar sobre o texto inteiro ou parágrafo..."
-            className="flex-1 bg-transparent px-2 text-xs text-white placeholder-[#71717a] outline-none"
-          />
-
-          {/* Quick / Deep Toggle Pill */}
-          <div className="flex items-center rounded-xl bg-[#09090b] p-0.5 border border-[#27272a]">
-            <button
-              type="button"
-              onClick={() => setAskMode("quick")}
-              className={`rounded-lg px-2 py-1 text-[10px] font-medium transition ${
-                askMode === "quick" ? "bg-white text-black font-semibold" : "text-[#71717a] hover:text-white"
-              }`}
-            >
-              Quick
-            </button>
-            <button
-              type="button"
-              onClick={() => setAskMode("deep")}
-              className={`rounded-lg px-2 py-1 text-[10px] font-medium transition ${
-                askMode === "deep" ? "bg-white text-black font-semibold" : "text-[#71717a] hover:text-white"
-              }`}
-            >
-              Deep
-            </button>
-          </div>
-
-          <button
-            type="submit"
-            disabled={!quickQuestion.trim() || isAsking}
-            className="flex items-center justify-center rounded-xl bg-white text-black size-8 hover:bg-neutral-200 transition-colors disabled:opacity-40"
-          >
-            {isAsking ? (
-              <div className="size-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-            ) : (
-              <Send className="size-3.5" />
-            )}
+                )}
+              </aside>
+            </section>
+          );
+        })}
+      </article>
+      {source.paragraphs.length > 0 && (
+        <footer className="reader-foot">
+          <span>
+            FIM DOS {source.excerptOnly ? "RECORTES" : "TRECHOS"} ·{" "}
+            {source.title}
+          </span>
+          <button className="text-button" onClick={() => setNotebook(true)}>
+            Abrir seu caderno
+            <ArrowRight size={13} />
           </button>
-        </form>
+        </footer>
+      )}
+      <div className="reading-ask">
+        <div className="ask-bar">
+          <Sparkles size={15} />
+          <input
+            aria-label="Perguntar sobre a leitura"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Pergunte sobre esta leitura…"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void ask();
+            }}
+          />
+          <div className="depth-toggle">
+            <button
+              className={depth === "quick" ? "active" : ""}
+              onClick={() => setDepth("quick")}
+            >
+              Breve
+            </button>
+            <button
+              className={depth === "deep" ? "active" : ""}
+              onClick={() => setDepth("deep")}
+            >
+              Profundo
+            </button>
+          </div>
+          <button
+            className="ask-submit"
+            aria-label="Enviar pergunta"
+            disabled={!question.trim() || busy || !source.paragraphs.length}
+            onClick={() => void ask()}
+          >
+            {busy ? <span className="spinner" /> : <ArrowRight size={17} />}
+          </button>
+        </div>
+        {error && (
+          <p className="inline-error" role="alert">
+            {error}
+          </p>
+        )}
+        {answer && (
+          <div className="reader-answer">
+            <Overline>RESPOSTA SOBRE A LEITURA</Overline>
+            <p>{answer}</p>
+            <button
+              className="text-button"
+              onClick={() => {
+                const n = addNote({
+                  title: question,
+                  content: answer,
+                  fonte: source.id,
+                  paginas: "Leitura",
+                  tags: [source.topic],
+                  claims: [],
+                  commentary: [answer],
+                  questions: [question],
+                  citation: `${source.author}. ${source.title}.`,
+                });
+                toast.success("Resposta guardada nas notas.");
+                setAnswer("");
+              }}
+            >
+              Guardar resposta
+              <Check size={13} />
+            </button>
+          </div>
+        )}
       </div>
+      {preferences && <ReaderSettings close={() => setPreferences(false)} />}{" "}
+      {adding && <AddSourceModal onClose={() => setAdding(false)} />}
+      {notebook && (
+        <Modal
+          title={`Caderno · ${source.title}`}
+          close={() => setNotebook(false)}
+          wide
+        >
+          <div className="notebook-list">
+            {sourceMarks
+              .filter((m) => m.type === "highlight")
+              .map((m) => (
+                <button
+                  className="notebook-entry"
+                  key={m.id}
+                  onClick={() => goTo(m.paragraphId)}
+                >
+                  <Overline>DESTAQUE · § {m.paragraphId}</Overline>
+                  <blockquote style={{ borderColor: m.color }}>
+                    {m.quote}
+                  </blockquote>
+                  <ArrowUpRight size={14} />
+                </button>
+              ))}
+            {sourceNotes.map((n) => (
+              <div className="notebook-entry" key={n.id}>
+                <Overline>NOTA · {n.paginas}</Overline>
+                <h3>{n.title}</h3>
+                <p>{n.content.slice(0, 320)}</p>
+                <div className="button-row">
+                  {n.paragraphId && (
+                    <button
+                      className="text-button"
+                      onClick={() => goTo(n.paragraphId!)}
+                    >
+                      Voltar ao trecho
+                      <ArrowUpRight size={13} />
+                    </button>
+                  )}
+                  <button
+                    className="text-button"
+                    onClick={() => {
+                      selectNote(n.id);
+                      setTab("notas");
+                    }}
+                  >
+                    Abrir nota
+                    <ArrowRight size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {!sourceNotes.length && !sourceMarks.length && (
+              <Empty
+                title="A margem está aberta."
+                text="Selecione um trecho para guardar a primeira ideia."
+              />
+            )}
+          </div>
+        </Modal>
+      )}
+      <TranslatorPopup
+        key={
+          selection
+            ? `${selection.paragraphId}-${selection.start}-${selection.end}`
+            : "closed"
+        }
+      />
     </div>
   );
 }

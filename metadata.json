@@ -1,6 +1,1 @@
-{
-  "name": "Learning OS",
-  "description": "Protótipo moderno de estudo, leitura profunda e aprendizagem inspirado na dinâmica de Hassan (Nutlope) com estética Dark AI e repetição espaçada.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
+{"name":"LearnOS","description":"Biblioteca pessoal para ler, pensar, conectar ideias e lembrar.","requestFramePermissions":[]}

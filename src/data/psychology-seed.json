@@ -1,0 +1,458 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-13",
+  "domain": "psicologia",
+  "notes": [
+    {
+      "id": "iyer-preface-visao",
+      "title": "Visão extática não usa o olho comum",
+      "tema": "states",
+      "fonte": "iyer-1926",
+      "capitulo": "Preface",
+      "paginas": "1–2, 4–9",
+      "data": "2026-09-13",
+      "status": "estavel",
+      "claims": [
+        "Imagens fugazes ao adormecer, ao despertar ou (raramente) acordado recebem o nome de visions.",
+        "Pessoas comuns não têm essas visões em vigília; a condição favorável é bhakti / êxtase religioso.",
+        "Também surgem por atividade mental unilateral, concentração intensa num grupo de ideias e sensibilidade dos órgãos rebaixada (Iyer cita Edmund Parish).",
+        "O objeto da ânsia não precisa ser nobre: até o trivial, grotesco ou perverso pode induzir êxtase e visão extática.",
+        "Quem teve a visão conta o êxtase; a visão pode ser bela, terrível, ou as duas.",
+        "Definição de trabalho no Preface: visões são estados mentais em que certas pessoas veem e ouvem sem os sentidos físicos de percepção."
+      ],
+      "quote": {
+        "text": "The fleeting images that occasionally present themselves when one is awake or when one is about to fall into sleep are called by the names of visions. Ordinary people do not have these visions during waking hours. These are generally brought about by emotional conditions. Bakthi or religious ecstacy is a condition favourable for having such visions.",
+        "pagina": "1–2"
+      },
+      "comentario": [
+        "Claim da fonte, vocabulário de 1926: Iyer trata visão como fenômeno psíquico real, não como metáfora.",
+        "Não confundir com alucinação: no Preface, o mesmo tipo de imagem em um insano muda de nome.",
+        "A citação a Parish (Hallucinations and Illusions) é o único apoio “de tratado” nesta distinção; o resto é anedota indiana (o lingam esculpido no caroço de manga)."
+      ],
+      "ligacoes": {
+        "relaciona": ["iyer-preface-alucinacao", "iyer-preface-trance"],
+        "contradiz": [],
+        "preRequisito": []
+      },
+      "perguntasAbertas": [
+        "Iyer separa visão de sonho só pelo grau de vigília, ou há diferença de conteúdo?",
+        "O êxtase dos bhakta conta como evidência ou como relato devocional?"
+      ],
+      "citacao": "Iyer, M. N. Ganesa. The Hidden Powers in Man. Madras: P. K. Vinayaga Mudaliar & Co., 1926, p. 1–2, 4–9 (PDF p. 8–9, 11–16)."
+    },
+    {
+      "id": "iyer-preface-alucinacao",
+      "title": "Alucinação é visão do insano: coisa que não existe",
+      "tema": "states",
+      "fonte": "iyer-1926",
+      "capitulo": "Preface",
+      "paginas": "1–2, 9",
+      "data": "2026-09-13",
+      "status": "estavel",
+      "claims": [
+        "Insanos (e “certos outros”) têm visões acordados; Iyer recusa chamá-las visões — o nome correto é hallucinations.",
+        "Definição: “delusions of perceptions of things that do not exist”.",
+        "Exemplo: o louco que se crê uma massa de pão e vive com medo de ser comido — está sob delusion or hallucination.",
+        "No elenco do Preface, alucinação anda junto de ilusão, mas não é a mesma coisa: uma é delírio privado de percepção; a outra é aparência enganosa, muitas vezes coletiva."
+      ],
+      "quote": {
+        "text": "Insane people and certain others have visions while they are awake, but they are given the names of not visions but hallucinations. […] Hallucinations may be described as delusions of perceptions of things that do not exist.",
+        "pagina": "2, 9"
+      },
+      "comentario": [
+        "A distinção é de vocabulário moral/clínico da época: o conteúdo perceptivo pode ser parecido; o que muda é quem vê (bhakta vs. insano) e se a coisa “existe”.",
+        "Não importar daqui um diagnóstico contemporâneo. Registrar a afirmação de Iyer.",
+        "Há capítulo próprio “Hallucinations” (livro p. 374); esta nota cobre só o recorte do Preface."
+      ],
+      "ligacoes": {
+        "relaciona": ["iyer-preface-visao", "iyer-preface-ilusao"],
+        "contradiz": [],
+        "preRequisito": ["iyer-preface-visao"]
+      },
+      "perguntasAbertas": [
+        "Quem são os “certain others” além dos insanos?",
+        "Iyer usa delusion e hallucination como sinônimos neste parágrafo?"
+      ],
+      "citacao": "Iyer, M. N. Ganesa. The Hidden Powers in Man. Madras: P. K. Vinayaga Mudaliar & Co., 1926, p. 1–2, 9 (PDF p. 8–9, 16)."
+    },
+    {
+      "id": "iyer-preface-ilusao",
+      "title": "Ilusão é aparência enganosa, muitas vezes coletiva",
+      "tema": "states",
+      "fonte": "iyer-1926",
+      "capitulo": "Preface",
+      "paginas": "9–12",
+      "data": "2026-09-13",
+      "status": "estavel",
+      "claims": [
+        "Definição: “Illusion may be defined as deceptive appearance.”",
+        "Nomes hindus: jalam, Indra-jalam, Mahendra-jalam.",
+        "Uma multidão é feita ver um incidente: mulher amarrada na rede sob o cesto some e reaparece na esquina.",
+        "Cientistas materialistas fotografaram a cena; no negativo a mulher não estava amarrada — estava à distância. Iyer chama isso de ilusão óptica criada pelo mágico, com um “pigmento” especial.",
+        "Mahendra-jalam (a escada de fios até as nuvens, corpos decapitados, o mágico que desce) é apresentado como ilusão óptica sofrida por um grande número de pessoas — por isso Iyer a detalha."
+      ],
+      "quote": {
+        "text": "Illusion may be defined as deceptive appearance. It is often called by the names Jalam, Indra-jalam, Mahendra-jalam etc. by the Hindus. […] This is clearly a case of optical illusion created by the performer of the magic, using certain power he possessed.",
+        "pagina": "9–10"
+      },
+      "comentario": [
+        "A fotografia é o único gesto “de prova” do Preface: o olho da plateia e o da câmera não coincidem. Continua sendo anedota — Iyer não nomeia o experimento.",
+        "Diferença operacional com alucinação: a ilusão é partilhável e produzida; a alucinação é delírio de algo que não existe para aquele sujeito.",
+        "Não misturar com māyā vedānta. Aqui jalam é truque / poder do performer.",
+        "Capítulo próprio “Illusions” no livro p. 394."
+      ],
+      "ligacoes": {
+        "relaciona": ["iyer-preface-alucinacao"],
+        "contradiz": [],
+        "preRequisito": ["iyer-preface-alucinacao"]
+      },
+      "perguntasAbertas": [
+        "O “pigmento especial” é matéria sutil ou truque de palco, no vocabulário do próprio Iyer?",
+        "Uma ilusão coletiva ainda conta como estado mental, ou já é operação sobre os outros?"
+      ],
+      "citacao": "Iyer, M. N. Ganesa. The Hidden Powers in Man. Madras: P. K. Vinayaga Mudaliar & Co., 1926, p. 9–12 (PDF p. 16–19)."
+    },
+    {
+      "id": "iyer-preface-trance",
+      "title": "Trance: droga, êxtase ou magnetismo — depois se traz a imagem",
+      "tema": "states",
+      "fonte": "iyer-1926",
+      "capitulo": "Preface",
+      "paginas": "2–3, 12–13",
+      "data": "2026-09-13",
+      "status": "estavel",
+      "claims": [
+        "Certas drogas induzem o estado chamado trance; o soma dos rishis é o exemplo antigo. Ninguém hoje, diz Iyer, sabe qual planta era.",
+        "Os antigos teriam usado drogas “akin to chloroform”: entram em trance e depois trazem à vigília as imagens mentais vistas ali.",
+        "Em geral o trance se induz por drogas (anodinos, soporíficos, hipnóticos); também por hipnotismo e mesmerismo.",
+        "Também: concentração profunda, devoção intensa, crystal gazing, perfumes fortes, repetição de palavras, cores, música, balanço suave do corpo.",
+        "Dois fins: o esquecimento das dores mundanas, ou trazer conhecimento e emoção de níveis mais altos.",
+        "Em trance hipnótico/mesmérico a pessoa fala permanecendo inconsciente e descreve o que visualiza com sentidos mais sutis.",
+        "Mesmerismo = magnetismo animal (emanações do corpo do operador). Hipnotismo produz resultados parecidos, mas Iyer o atribui à condição físico-psíquica do sujeito, não às emanações."
+      ],
+      "quote": {
+        "text": "The ancients knew of certain drugs akin to the drug chloroform of modern days and used them to induce in themselves and in others the state of mind going by the name trance and then bring to their waking consciousness what they saw as mental images or pictures while in that state.",
+        "pagina": "3"
+      },
+      "comentario": [
+        "Trance não é visão nem alucinação: é o estado no qual imagens podem aparecer, depois relatadas em vigília.",
+        "A analogia com clorofórmio é retórica de 1926, não farmacologia. Tratar como afirmação da fonte.",
+        "A cisão mesmerismo vs. hipnotismo importa para o mapa: um poder sai do operador; o outro se instala no sujeito.",
+        "Capítulos posteriores: Mesmerism p. 156, Hypnotism p. 186, Crystal Gazing p. 226."
+      ],
+      "ligacoes": {
+        "relaciona": ["iyer-preface-visao"],
+        "contradiz": [],
+        "preRequisito": []
+      },
+      "perguntasAbertas": [
+        "O trance por bhakti é o mesmo estado que o trance por soma, só muda o gatilho?",
+        "Se o hipnotismo não usa emanações, o que Iyer chama de “poder” no sujeito?"
+      ],
+      "citacao": "Iyer, M. N. Ganesa. The Hidden Powers in Man. Madras: P. K. Vinayaga Mudaliar & Co., 1926, p. 2–3, 12–13 (PDF p. 9–10, 19–20)."
+    }
+  ],
+  "cards": [
+    {
+      "id": "card-visao-vs-alucinacao",
+      "tema": "states",
+      "noteIds": ["iyer-preface-visao", "iyer-preface-alucinacao"],
+      "q": "No Preface de Iyer, uma pessoa acordada vê uma imagem que os outros não veem. Quando ele chama isso de visão e quando chama de alucinação?",
+      "gabarito": "Visão: imagem em êxtase (bhakti) ou concentração, em quem não é tratado como insano — “fleeting images” também ao adormecer. Alucinação: a mesma classe de imagem no insano (e “certos outros”); definição: delírio de percepção de coisas que não existem (o homem que se crê um pão). Iyer p. 1–2, 9.",
+      "fonte": "iyer-1926",
+      "paginas": "1–2, 9",
+      "proxima": "2026-09-13",
+      "qualidade": 0
+    },
+    {
+      "id": "card-ilusao-vs-alucinacao",
+      "tema": "states",
+      "noteIds": ["iyer-preface-ilusao", "iyer-preface-alucinacao"],
+      "q": "Qual a definição de ilusão no Preface, e o que a separa da alucinação?",
+      "gabarito": "Ilusão = aparência enganosa (jalam / Indra-jalam). É coletiva e produzida: o mágico faz a plateia ver a mulher no cesto; a fotografia mostra que ela estava à distância. Alucinação = delírio privado de coisas que não existem. Iyer p. 9–12 vs. p. 9.",
+      "fonte": "iyer-1926",
+      "paginas": "9–12",
+      "proxima": "2026-09-13",
+      "qualidade": 0
+    },
+    {
+      "id": "card-trance-inducao",
+      "tema": "states",
+      "noteIds": ["iyer-preface-trance"],
+      "q": "Como o trance é induzido no Preface, e para que serve, segundo Iyer?",
+      "gabarito": "Gatilhos: drogas (soma, anodinos/soporíficos), hipnotismo, mesmerismo, concentração, devoção, crystal gazing, perfume, repetição de palavras, cor, música, balanço do corpo. Fins: oblivion das dores mundanas, ou trazer conhecimento/emoção de níveis mais altos — depois se relata em vigília o que se viu. Iyer p. 2–3, 12–13.",
+      "fonte": "iyer-1926",
+      "paginas": "2–3, 12–13",
+      "proxima": "2026-09-13",
+      "qualidade": 0
+    },
+    {
+      "id": "card-mesmerismo-hipnotismo",
+      "tema": "states",
+      "noteIds": ["iyer-preface-trance"],
+      "q": "No Preface, mesmerismo e hipnotismo produzem trance parecido. O que Iyer diz que os distingue?",
+      "gabarito": "Mesmerismo = magnetismo animal: emanações do corpo do operador. Hipnotismo: resultados semelhantes, mas devidos à condição físico-psíquica de quem é submetido, não às emanações. Em ambos o sujeito pode falar inconsciente e usar sentidos “sutis”. Iyer p. 12–13.",
+      "fonte": "iyer-1926",
+      "paginas": "12–13",
+      "proxima": "2026-09-13",
+      "qualidade": 0
+    },
+    {
+      "id": "card-objeto-extase",
+      "tema": "states",
+      "noteIds": ["iyer-preface-visao"],
+      "q": "O objeto da visão extática precisa ser um deus, ou algo nobre?",
+      "gabarito": "Não. Iyer: “It is not at all essential that the object of longing or desire should be one very high and noble.” Até o trivial, grotesco ou perverso serve. Ilustra com o guru que manda meditar numa caixa de fósforos e com o rústico que adora um lingam talhado no caroço de manga. Iyer p. 4–7.",
+      "fonte": "iyer-1926",
+      "paginas": "4–7",
+      "proxima": "2026-09-13",
+      "qualidade": 0
+    }
+  ],
+  "map": {
+    "nodes": [
+      {
+        "id": "psyche",
+        "tema": "O que é mente / alma / psyché",
+        "status": "aberto",
+        "noteIds": []
+      },
+      {
+        "id": "thought-power",
+        "tema": "Poder do pensamento",
+        "status": "aberto",
+        "noteIds": []
+      },
+      {
+        "id": "emotion-vs-reason",
+        "tema": "Emoção coletiva vs razão",
+        "status": "aberto",
+        "noteIds": []
+      },
+      {
+        "id": "states",
+        "tema": "Estados: sonho, êxtase, trance, hipnose",
+        "status": "parcial",
+        "noteIds": [
+          "iyer-preface-visao",
+          "iyer-preface-alucinacao",
+          "iyer-preface-ilusao",
+          "iyer-preface-trance"
+        ]
+      },
+      {
+        "id": "discipline",
+        "tema": "Psychology como disciplina histórica",
+        "status": "aberto",
+        "noteIds": []
+      },
+      {
+        "id": "matter-spirit",
+        "tema": "Matéria e espírito (prakriti / purusha)",
+        "status": "aberto",
+        "noteIds": []
+      },
+      {
+        "id": "evidence",
+        "tema": "O que conta como evidência nessas fontes",
+        "status": "parcial",
+        "noteIds": ["iyer-preface-ilusao"]
+      }
+    ],
+    "edges": [
+      {
+        "from": "states",
+        "relation": "distingue",
+        "to": "evidence",
+        "supportedBy": ["iyer-preface-ilusao", "iyer-preface-alucinacao"]
+      },
+      {
+        "from": "states",
+        "relation": "é recorte de",
+        "to": "psyche",
+        "supportedBy": ["iyer-preface-visao", "iyer-preface-trance"]
+      }
+    ],
+    "contradictions": []
+  },
+  "profile": {
+    "updatedAt": "2026-09-13",
+    "intencao": "Entender e lembrar melhor. Domínio-piloto: psicologia, a partir de três fontes históricas distintas.",
+    "jaTraz": [
+      "Interesse em agentes de IA e em montar um Learning OS.",
+      "Computador danificado: estuda no tablet/celular."
+    ],
+    "nivel": "Iniciante nas três obras. Não assumir formação em história da psicologia.",
+    "travas": [],
+    "jaEntendeu": [
+      "Preface de Iyer destilado: quatro estados (visão, alucinação, ilusão, trance) com página."
+    ],
+    "filaPessoal": [
+      "Revisar de memória as quatro distinções do Preface.",
+      "Destilar Iyer Matter and Spirit — tese prakriti/purusha em 8 linhas.",
+      "Destilar Iyer Thought and its Power.",
+      "Destilar Kidd IV — por que poder ≠ razão.",
+      "Destilar Vidal 1 — o que ele ataca na frase “longo passado, curta história”.",
+      "Comparar os três no nó psyche."
+    ]
+  },
+  "sources": [
+    {
+      "id": "iyer-1926",
+      "autor": "Iyer, M. N. Ganesa",
+      "obra": "The Hidden Powers in Man",
+      "local": "Madras",
+      "ano": 1926,
+      "arquivo": "836-The Hidden Powers in Man (1926)_copy.pdf",
+      "paginasArquivo": 492,
+      "mapeamento": "PDF ≈ página do livro + 7. Folha de rosto = PDF p. 4. Preface (livro p. 1) = PDF p. 8.",
+      "capitulos": [
+        { "titulo": "Preface", "pagina": 1, "status": "destilado" },
+        { "titulo": "Matter and Spirit", "pagina": 23, "status": "pendente" },
+        { "titulo": "Human Personality", "pagina": 41, "status": "pendente" },
+        { "titulo": "Mind and Matter", "pagina": 61, "status": "pendente" },
+        {
+          "titulo": "Thought and its Power",
+          "pagina": 89,
+          "status": "pendente"
+        },
+        {
+          "titulo": "Mental Therapeutics",
+          "pagina": 116,
+          "status": "pendente"
+        },
+        { "titulo": "Telepathy", "pagina": 137, "status": "pendente" },
+        { "titulo": "Mesmerism", "pagina": 156, "status": "pendente" },
+        { "titulo": "Hypnotism", "pagina": 186, "status": "pendente" },
+        { "titulo": "Crystal Gazing", "pagina": 226, "status": "pendente" },
+        { "titulo": "Clairvoyance", "pagina": 238, "status": "pendente" },
+        { "titulo": "Clairaudience", "pagina": 247, "status": "pendente" },
+        { "titulo": "Psychometry", "pagina": 255, "status": "pendente" },
+        {
+          "titulo": "Spirits and their World",
+          "pagina": 272,
+          "status": "pendente"
+        },
+        {
+          "titulo": "Apparitions and Ghosts",
+          "pagina": 294,
+          "status": "pendente"
+        },
+        {
+          "titulo": "Magic and Witch-craft",
+          "pagina": 309,
+          "status": "pendente"
+        },
+        { "titulo": "Prevision", "pagina": 333, "status": "pendente" },
+        { "titulo": "Praemonition", "pagina": 352, "status": "pendente" },
+        { "titulo": "Hallucinations", "pagina": 374, "status": "pendente" },
+        { "titulo": "Illusions", "pagina": 394, "status": "pendente" },
+        { "titulo": "Dreams", "pagina": 412, "status": "pendente" },
+        {
+          "titulo": "The Rationale of Dreams",
+          "pagina": 430,
+          "status": "pendente"
+        },
+        { "titulo": "Dream Reading", "pagina": 452, "status": "pendente" }
+      ]
+    },
+    {
+      "id": "kidd-1919",
+      "autor": "Kidd, Benjamin",
+      "obra": "The Science of Power",
+      "local": "London",
+      "ano": 1919,
+      "edicao": "8. ed. (1. ed. 1918)",
+      "arquivo": "scienceofpower00kidduoft.pdf",
+      "paginasArquivo": 328,
+      "mapeamento": "PDF ≈ página do livro + 12 no miolo. Sumário = PDF p. 9. Cap. I (livro p. 3) = PDF p. 15.",
+      "capitulos": [
+        {
+          "titulo": "I. The Gathering of the World Revolution",
+          "pagina": 3,
+          "status": "pendente"
+        },
+        {
+          "titulo": "II. The Psychic Centre of the Great Pagan Retrogression",
+          "pagina": 41,
+          "status": "pendente"
+        },
+        {
+          "titulo": "III. The Culminating Phase of the Pagan Ethic in the West",
+          "pagina": 68,
+          "status": "pendente"
+        },
+        {
+          "titulo": "IV. Power in Civilization Rests on Collective Emotion, not on Reason",
+          "pagina": 101,
+          "status": "pendente"
+        },
+        {
+          "titulo": "V. The Emotion of the Ideal is the Supreme Principle of Efficiency",
+          "pagina": 121,
+          "status": "pendente"
+        },
+        {
+          "titulo": "VI. The Stupendous Position in the West",
+          "pagina": 152,
+          "status": "pendente"
+        },
+        {
+          "titulo": "VII. The First Laws of the Science of Power",
+          "pagina": 181,
+          "status": "pendente"
+        },
+        {
+          "titulo": "VIII. Woman is the Psychic Centre of Power",
+          "pagina": 192,
+          "status": "pendente"
+        },
+        {
+          "titulo": "IX. The Mind of Woman",
+          "pagina": 223,
+          "status": "pendente"
+        },
+        { "titulo": "X. Social Heredity", "pagina": 258, "status": "pendente" },
+        {
+          "titulo": "A Chart of Human Progress",
+          "pagina": 299,
+          "status": "pendente"
+        }
+      ]
+    },
+    {
+      "id": "vidal-2011",
+      "autor": "Vidal, Fernando",
+      "obra": "The Sciences of the Soul: The Early Modern Origins of Psychology",
+      "local": "Chicago",
+      "ano": 2011,
+      "arquivo": "Fernando Vidal - The Sciences of the Soul...epub",
+      "paginasArquivo": null,
+      "mapeamento": "Usar capítulos do EPUB, não página impressa, até haver PDF.",
+      "capitulos": [
+        {
+          "titulo": "1. The “Century of Psychology”",
+          "pagina": null,
+          "status": "pendente"
+        },
+        {
+          "titulo": "2. “Psychology” in the Sixteenth Century",
+          "pagina": null,
+          "status": "pendente"
+        },
+        {
+          "titulo": "7. Anthropology’s Place in the Encyclopedias",
+          "pagina": null,
+          "status": "pendente"
+        },
+        {
+          "titulo": "8. Human Perfectibility and the Primacy of Psychology",
+          "pagina": null,
+          "status": "pendente"
+        }
+      ]
+    }
+  ],
+  "reasoning": [],
+  "marks": []
+}

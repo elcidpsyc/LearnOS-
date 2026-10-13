@@ -1,258 +1,283 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  X,
+  ArrowLeft,
+  ArrowRight,
+  Download,
   BookOpen,
-  Headphones,
   Check,
-  ChevronLeft,
-  ChevronRight,
-  Play,
-  Pause,
-  Printer,
-  Sparkles,
-  Volume2
+  Headphones,
+  VolumeX,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useVault } from "@/lib/vault/store";
-
-interface GlossEditionModalProps {
-  open: boolean;
-  onClose: () => void;
-}
-
-export function GlossEditionModal({ open, onClose }: void | any) {
-  const sources = useVault((s) => s.sources);
-  const notes = useVault((s) => s.notes);
-  const cards = useVault((s) => s.cards);
-
-  const [pageIndex, setPageIndex] = useState(0);
-  const [isPlayingPodcast, setIsPlayingPodcast] = useState(false);
-  const [editionName, setEditionName] = useState("Edição de Outubro");
-  const [orderPlaced, setOrderPlaced] = useState(false);
-
-  const bookPages = [
-    {
-      title: "Capa da Edição",
-      type: "cover",
-      content: editionName,
-      sub: "Tudo o que você compreendeu, sintetizado e encadernado."
-    },
-    {
-      title: "Folha de Rosto",
-      type: "title",
-      content: "Learning OS — Gloss Edition",
-      sub: "Sobre fazer um trabalho excepcional e as máquinas aprendendo a ajudar."
-    },
-    {
-      title: "The Bitter Lesson",
-      type: "article",
-      author: "Rich Sutton",
-      highlight: "A maior lição dos últimos 70 anos de pesquisa em IA é que métodos gerais que alavancam computação são invariavelmente os mais eficazes."
-    },
-    {
-      title: "You and Your Research",
-      type: "article",
-      author: "Richard Hamming",
-      highlight: "Conhecimento e produtividade são como juros compostos. Quem produz 10% a mais dobra o output ao longo da carreira."
-    },
-    {
-      title: "The Rise of the Forward Deployed Engineer",
-      type: "article",
-      author: "Vinoo Ganesh",
-      highlight: "FDEs resolvem gargalos de última milha para retroalimentar o produto central com abstrações reutilizáveis."
+import { Modal, Overline } from "./ui";
+export function GlossEditionModal({ onClose }: { onClose: () => void }) {
+  const { sources, notes, marginNotes, settings } = useVault((s) => s);
+  const [chosen, setChosen] = useState(
+    sources.filter((s) => s.paragraphs.length).map((s) => s.id),
+  );
+  const [title, setTitle] = useState("Minha edição");
+  const [page, setPage] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const selected = sources.filter((s) => chosen.includes(s.id));
+  const pages = selected.flatMap((s) =>
+    s.paragraphs.map((p) => ({ source: s, paragraph: p })),
+  );
+  const active = pages[page];
+  const exportPDF = async () => {
+    setBusy(true);
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "mm", format: "a5" });
+      const width = 148,
+        height = 210,
+        margin = 16;
+      let y = 24;
+      const write = (
+        text: string,
+        size = 11,
+        font: "normal" | "bold" | "italic" = "normal",
+      ) => {
+        doc.setFont("times", font);
+        doc.setFontSize(size);
+        const lines = doc.splitTextToSize(text, width - margin * 2) as string[];
+        for (const line of lines) {
+          if (y > height - 20) {
+            doc.addPage();
+            y = 22;
+          }
+          doc.text(line, margin, y);
+          y += size * 0.45;
+        }
+        y += 4;
+      };
+      write("LEARNOS / LEITURA, PENSAMENTO, MEMÓRIA", 9);
+      y = 60;
+      write(title, 29);
+      write(settings.displayName, 14);
+      write(
+        new Intl.DateTimeFormat("pt-BR", {
+          month: "long",
+          year: "numeric",
+        }).format(new Date()),
+        11,
+      );
+      write(
+        `${selected.length} fontes · ${notes.filter((n) => chosen.includes(n.fonte)).length} notas`,
+        11,
+      );
+      doc.addPage();
+      y = 24;
+      write("Nesta edição", 22);
+      for (const s of selected) write(`${s.title} — ${s.author}`, 12);
+      for (const s of selected) {
+        doc.addPage();
+        y = 24;
+        write(s.title, 22);
+        write(
+          `${s.author}${s.publishedYear ? ` · ${s.publishedYear}` : ""}`,
+          11,
+        );
+        if (s.excerptOnly)
+          write(
+            "Recortes preservados; esta edição não contém a obra integral.",
+            10,
+            "italic",
+          );
+        for (const p of s.paragraphs) {
+          write(`${p.page ? `p. ${p.page}` : `§ ${p.id}`}`, 8, "italic");
+          write(p.text);
+          for (const m of marginNotes.filter(
+            (m) => m.sourceId === s.id && m.paragraphId === p.id,
+          )) {
+            write(
+              `${m.type === "highlight" ? "Destaque" : "Na margem"}: ${m.quote ?? m.title}`,
+              10,
+              "italic",
+            );
+            if (m.content) write(m.content, 10);
+          }
+        }
+        const ns = notes.filter((n) => n.fonte === s.id);
+        if (ns.length) {
+          write("Seu caderno", 18);
+          for (const n of ns) {
+            write(n.title, 12, "bold");
+            for (const claim of n.claims) write(`Fonte: ${claim}`, 10);
+            for (const comment of n.commentary)
+              write(`Comentário: ${comment}`, 10);
+            if (!n.claims.length && !n.commentary.length) write(n.content, 10);
+            write(n.citation, 9, "italic");
+          }
+        }
+        if (s.url) write(`Original: ${s.url}`, 9);
+      }
+      for (let i = 1; i <= doc.getNumberOfPages(); i++) {
+        doc.setPage(i);
+        doc.setFont("times", "normal");
+        doc.setFontSize(8);
+        doc.text(`${i}`, width / 2, height - 10, { align: "center" });
+      }
+      doc.save("LearnOS-minha-edicao.pdf");
+      toast.success("Sua edição foi gerada em PDF.");
+    } catch (e) {
+      toast.error(
+        "Não foi possível gerar o PDF. Tente uma seleção menor de fontes.",
+      );
+    } finally {
+      setBusy(false);
     }
-  ];
-
-  if (!open) return null;
-
+  };
+  const speak = () => {
+    if (playing) {
+      speechSynthesis.cancel();
+      setPlaying(false);
+      return;
+    }
+    if (!("speechSynthesis" in window)) {
+      toast.error("Este navegador não oferece leitura em voz alta.");
+      return;
+    }
+    const text = selected
+      .map((s) => `${s.title}. ${s.paragraphs.map((p) => p.text).join("\n")}`)
+      .join("\n");
+    const chunks = text.match(/.{1,900}(?:[.!?]\s|$)|.{1,900}/gs) ?? [text];
+    let i = 0;
+    setPlaying(true);
+    const next = () => {
+      if (i >= chunks.length) {
+        setPlaying(false);
+        return;
+      }
+      const u = new SpeechSynthesisUtterance(chunks[i++]);
+      u.lang = "pt-BR";
+      u.onend = next;
+      u.onerror = () => setPlaying(false);
+      speechSynthesis.speak(u);
+    };
+    next();
+  };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.96 }}
-        className="relative my-8 w-full max-w-4xl rounded-3xl border border-[#27272a] bg-[#18181b] p-6 text-white shadow-[0_20px_60px_rgba(0,0,0,0.9)] lg:p-8"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-5 top-5 rounded-full p-2 text-[#71717a] hover:bg-white/10 hover:text-white transition"
-        >
-          <X className="size-5" />
-        </button>
-
-        {/* Header */}
-        <div className="mb-6 flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a1a1aa] flex items-center gap-2">
-            <Sparkles className="size-3 text-amber-400" />
-            Gloss Editions · O Seu Livro Físico
-          </span>
-          <h2 className="font-display text-3xl font-semibold tracking-tight text-white">
-            Imprima e receba seu livro em casa
-          </h2>
-          <p className="text-xs text-[#a1a1aa]">
-            Tudo o que você salvou no Learning OS, com suas anotações e destaques, diagramado como um livro formato 6×9.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 items-start">
-          {/* 3D Flipbook Preview Area */}
-          <div className="lg:col-span-7 flex flex-col items-center">
-            <div className="relative min-h-[360px] w-full max-w-sm rounded-2xl border border-white/10 bg-[#09090b] p-6 shadow-2xl flex flex-col justify-between">
-              {/* Spine shadow indicator */}
-              <div className="absolute left-0 top-0 bottom-0 w-3 bg-gradient-to-r from-black/80 to-transparent rounded-l-2xl" />
-
+    <Modal
+      title="Sua leitura, em uma edição"
+      close={() => {
+        if ("speechSynthesis" in window) speechSynthesis.cancel();
+        onClose();
+      }}
+      wide
+    >
+      <div className="edition-layout">
+        <div className="edition-preview">
+          <div className="edition-spread">
+            <div className="edition-left-page">
+              <Overline>LEARNOS · EDIÇÃO PESSOAL</Overline>
               <div>
-                <span className="text-[10px] font-mono uppercase text-[#71717a]">
-                  Página {pageIndex + 1} de {bookPages.length} · Gloss Print
-                </span>
-
-                <div className="mt-8 space-y-4">
-                  <h3 className="font-display text-2xl font-semibold text-white">
-                    {bookPages[pageIndex].title}
-                  </h3>
-
-                  {bookPages[pageIndex].author && (
-                    <p className="text-xs text-[#a1a1aa]">
-                      Por {bookPages[pageIndex].author}
-                    </p>
-                  )}
-
-                  {bookPages[pageIndex].highlight && (
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                      <p className="font-serif italic text-sm text-[#e4e4e7] leading-relaxed">
-                        "{bookPages[pageIndex].highlight}"
-                      </p>
-                    </div>
-                  )}
-
-                  {bookPages[pageIndex].sub && (
-                    <p className="text-xs text-[#d4d4d8] leading-relaxed">
-                      {bookPages[pageIndex].sub}
-                    </p>
-                  )}
-                </div>
+                <BookOpen size={58} strokeWidth={0.8} />
+                <h2>{title}</h2>
+                <p>{settings.displayName}</p>
               </div>
-
-              {/* Page Controls */}
-              <div className="flex items-center justify-between pt-6 border-t border-white/10">
-                <button
-                  type="button"
-                  disabled={pageIndex === 0}
-                  onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
-                  className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20 disabled:opacity-30 transition"
-                >
-                  <ChevronLeft className="size-4" /> Anterior
-                </button>
-                <span className="text-xs font-mono text-[#71717a]">
-                  {bookPages[pageIndex].title}
-                </span>
-                <button
-                  type="button"
-                  disabled={pageIndex === bookPages.length - 1}
-                  onClick={() => setPageIndex((p) => Math.min(bookPages.length - 1, p + 1))}
-                  className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20 disabled:opacity-30 transition"
-                >
-                  Próxima <ChevronRight className="size-4" />
-                </button>
-              </div>
+              <small>LEITURA, PENSAMENTO, MEMÓRIA.</small>
             </div>
-
-            <p className="mt-3 text-[11px] text-[#71717a] text-center">
-              Livro físico em papel creme 80g com capa fosca e suas notas na margem.
-            </p>
-          </div>
-
-          {/* Edition Details & Podcast Panel */}
-          <div className="lg:col-span-5 space-y-4">
-            {/* Audio Podcast Player (Gloss Video 2 feature!) */}
-            <div className="rounded-2xl border border-[#27272a] bg-[#09090b] p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                  <Headphones className="size-3.5" />
-                  Ouvir como Podcast
-                </span>
-                <span className="text-[10px] text-[#71717a]">14 minutos</span>
-              </div>
-
-              <p className="text-xs text-[#d4d4d8] leading-snug">
-                Dois apresentadores de IA discutem suas leituras de outubro, destacando seus insights e conexões.
-              </p>
-
-              <div className="flex items-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setIsPlayingPodcast(!isPlayingPodcast)}
-                  className="flex items-center gap-2 rounded-xl bg-white px-3.5 py-1.5 text-xs font-semibold text-black hover:bg-neutral-200 transition"
-                >
-                  {isPlayingPodcast ? (
-                    <>
-                      <Pause className="size-3.5 fill-black" /> Pausar
-                    </>
-                  ) : (
-                    <>
-                      <Play className="size-3.5 fill-black" /> Gerar & Ouvir
-                    </>
-                  )}
-                </button>
-
-                {isPlayingPodcast && (
-                  <div className="flex items-center gap-1 text-xs text-emerald-400 font-mono animate-pulse">
-                    <Volume2 className="size-4" /> Tocando episódio...
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Articles Included in Edition */}
-            <div className="rounded-2xl border border-[#27272a] bg-[#09090b] p-4 space-y-2.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#71717a] block">
-                Conteúdo Incluído nesta Edição
-              </span>
-
-              <div className="space-y-1.5 text-xs">
-                {sources.slice(0, 4).map((s) => (
-                  <div key={s.id} className="flex items-center justify-between text-[#a1a1aa]">
-                    <span className="flex items-center gap-2">
-                      <Check className="size-3.5 text-emerald-400" />
-                      <span className="text-white font-medium">{s.title.slice(0, 26)}...</span>
-                    </span>
-                    <span className="text-[10px] font-mono text-[#71717a]">{s.pages} págs</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs text-[#a1a1aa]">
-                <span>Total: 5 textos · 184 páginas</span>
-                <span className="text-white font-semibold">{notes.length} anotações</span>
-              </div>
-            </div>
-
-            {/* Buy / Print Action */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center justify-between">
-              <div>
-                <span className="font-display text-2xl font-bold text-white">$25</span>
-                <span className="text-[11px] text-[#71717a] block">Frete global incluso</span>
-              </div>
-
-              {orderPlaced ? (
-                <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold">
-                  <Check className="size-4" /> Pedido Registrado!
-                </div>
+            <div className="edition-right-page">
+              {active ? (
+                <>
+                  <Overline>{active.source.author}</Overline>
+                  <h3>{active.source.title}</h3>
+                  <p>
+                    {active.paragraph.text.slice(0, 740)}
+                    {active.paragraph.text.length > 740 ? "…" : ""}
+                  </p>
+                  <small>
+                    {active.paragraph.page
+                      ? `p. ${active.paragraph.page}`
+                      : `§ ${active.paragraph.id}`}{" "}
+                    · prévia
+                  </small>
+                </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setOrderPlaced(true)}
-                  className="flex items-center gap-2 rounded-2xl bg-white px-5 py-2.5 text-xs font-bold text-black hover:bg-neutral-200 transition"
-                >
-                  <Printer className="size-4" />
-                  Imprimir e Enviar
-                </button>
+                <p>Selecione uma fonte para preparar sua edição.</p>
               )}
             </div>
           </div>
+          <div className="edition-controls">
+            <button
+              className="icon-button"
+              aria-label="Trecho anterior"
+              disabled={page === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <span>
+              {pages.length ? `${page + 1} / ${pages.length}` : "Sem trechos"}
+            </span>
+            <button
+              className="icon-button"
+              aria-label="Próximo trecho"
+              disabled={page >= pages.length - 1}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              <ArrowRight size={16} />
+            </button>
+          </div>
         </div>
-      </motion.div>
-    </div>
+        <aside className="edition-options">
+          <Overline>SEU ACERVO, COM SUAS NOTAS</Overline>
+          <h3>Um livro do que ficou.</h3>
+          <p>
+            Escolha as fontes. O PDF inclui o texto disponível, destaques, notas
+            e referências.
+          </p>
+          <label className="field">
+            Nome da edição
+            <input value={title} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+          <div className="edition-source-list">
+            {sources
+              .filter((s) => s.paragraphs.length)
+              .map((s) => (
+                <label key={s.id}>
+                  <input
+                    type="checkbox"
+                    checked={chosen.includes(s.id)}
+                    onChange={(e) => {
+                      setChosen((c) =>
+                        e.target.checked
+                          ? [...c, s.id]
+                          : c.filter((id) => id !== s.id),
+                      );
+                      setPage(0);
+                    }}
+                  />
+                  <span>
+                    {s.title}
+                    <small>{s.author}</small>
+                  </span>
+                </label>
+              ))}
+          </div>
+          <button
+            className="button primary"
+            disabled={busy || !chosen.length}
+            onClick={() => void exportPDF()}
+          >
+            <Download size={15} />
+            {busy ? "Preparando…" : "Baixar edição em PDF"}
+          </button>
+          <button
+            className="text-button"
+            disabled={!chosen.length}
+            onClick={speak}
+          >
+            {playing ? <VolumeX size={15} /> : <Headphones size={15} />}{" "}
+            {playing ? "Parar áudio" : "Ouvir os textos selecionados"}
+          </button>
+          <small className="muted">
+            A leitura em voz alta usa as vozes disponíveis no seu aparelho.
+          </small>
+        </aside>
+      </div>
+    </Modal>
   );
 }

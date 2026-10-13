@@ -1,287 +1,317 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Waypoints, Sparkles, ArrowRight, BookOpen, Layers, Network } from "lucide-react";
-import { useVault, FONTE_LABEL } from "@/lib/vault/store";
-
-interface Node {
-  id: string;
-  label: string;
-  category: "AI" | "Carreira" | "Engenharia" | "Cognição";
-  sourceId: string;
-  summary: string;
-  x: number;
-  y: number;
-  connections: string[];
-}
-
-const NODES: Node[] = [
-  {
-    id: "fde",
-    label: "Forward Deployed Eng.",
-    category: "Engenharia",
-    sourceId: "fde_guide",
-    summary: "Engenheiros na linha de frente que transformam problemas específicos em componentes de plataforma reutilizáveis.",
-    x: 48,
-    y: 28,
-    connections: ["frontline", "kepler", "palantir"]
-  },
-  {
-    id: "palantir",
-    label: "Cultura Palantir",
-    category: "Engenharia",
-    sourceId: "fde_guide",
-    summary: "Berço da metodologia FDE e rotação entre campo operacional e desenvolvimento de plataforma de dados.",
-    x: 20,
-    y: 40,
-    connections: ["fde", "frontline"]
-  },
-  {
-    id: "frontline",
-    label: "Project Frontline",
-    category: "Engenharia",
-    sourceId: "fde_guide",
-    summary: "Programa de rotação de 250+ engenheiros entre engenharia de produto e implantação no cliente.",
-    x: 28,
-    y: 65,
-    connections: ["fde", "palantir"]
-  },
-  {
-    id: "kepler",
-    label: "IA Determinística",
-    category: "AI",
-    sourceId: "fde_guide",
-    summary: "Infraestrutura de IA onde respostas plausíveis porém erradas são inaceitáveis (finanças, defesa).",
-    x: 72,
-    y: 35,
-    connections: ["fde", "software2"]
-  },
-  {
-    id: "compound",
-    label: "Juros Compostos da Mente",
-    category: "Cognição",
-    sourceId: "hamming",
-    summary: "Tese de Hamming: 10% a mais de esforço constante dobra a produtividade intelectual ao longo dos anos.",
-    x: 45,
-    y: 80,
-    connections: ["greatwork", "bitter"]
-  },
-  {
-    id: "greatwork",
-    label: "Trabalho Excepcional",
-    category: "Carreira",
-    sourceId: "graham",
-    summary: "Perseguição de curiosidade obsessiva em terrenos férteis com alta capacidade de impacto.",
-    x: 75,
-    y: 82,
-    connections: ["compound"]
-  },
-  {
-    id: "bitter",
-    label: "The Bitter Lesson",
-    category: "AI",
-    sourceId: "bitter_lesson",
-    summary: "Poder computacional e busca massiva superam conhecimento humano codificado à mão.",
-    x: 78,
-    y: 58,
-    connections: ["software2", "compound"]
-  },
-  {
-    id: "software2",
-    label: "Software 2.0",
-    category: "AI",
-    sourceId: "software_2",
-    summary: "O código é escrito no espaço de pesos neurais via otimização, e não como lógica if/else procedimental.",
-    x: 82,
-    y: 18,
-    connections: ["bitter", "kepler"]
-  }
-];
-
+import {
+  Plus,
+  ArrowRight,
+  ArrowUpRight,
+  Trash2,
+  Waypoints,
+  Check,
+  List,
+  Network,
+} from "lucide-react";
+import { useVault } from "@/lib/vault/store";
+import { Modal, Overline, Empty } from "./ui";
 export function MapTab() {
-  const setActiveSourceId = useVault((s) => s.setActiveSourceId);
-  const setTab = useVault((s) => s.setTab);
-  const [selectedNodeId, setSelectedNodeId] = useState<string>("fde");
-  const [filterCategory, setFilterCategory] = useState<string>("all");
-
-  const activeNode = NODES.find((n) => n.id === selectedNodeId) || NODES[0];
-
-  const filteredNodes = NODES.filter(
-    (n) => filterCategory === "all" || n.category === filterCategory
+  const {
+    notes,
+    relations,
+    sources,
+    addRelation,
+    deleteRelation,
+    selectNote,
+    setTab,
+  } = useVault((s) => s);
+  const [selected, setSelected] = useState(notes[0]?.id ?? "");
+  const [adding, setAdding] = useState(false);
+  const [from, setFrom] = useState(notes[0]?.id ?? "");
+  const [to, setTo] = useState(notes[1]?.id ?? "");
+  const [kind, setKind] = useState<"relaciona" | "contradiz" | "pre-requisito">(
+    "relaciona",
   );
-
+  const [reason, setReason] = useState("");
+  const [view, setView] = useState<"map" | "list">("map");
+  const active = notes.find((n) => n.id === selected);
+  const positions = new Map(
+    notes.map((n, i) => [
+      n.id,
+      { x: 40 + (i % 3) * 305, y: 35 + Math.floor(i / 3) * 145 },
+    ]),
+  );
+  const graphHeight = Math.max(350, Math.ceil(notes.length / 3) * 145 + 35);
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="map-page">
+      <div className="page-heading">
         <div>
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-white">
-            Grafo de Conhecimento
-          </h2>
-          <p className="text-xs text-[#a1a1aa]">
-            Mapeamento ontológico de conceitos e conexões entre leituras
-          </p>
+          <Overline>IDEIAS EM CONVERSA</Overline>
+          <h1>
+            Conexões<span className="title-period">.</span>
+          </h1>
+          <p>Nomeie o que aproxima, contradiz ou prepara uma ideia.</p>
         </div>
-
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1">
-          {["all", "AI", "Engenharia", "Cognição", "Carreira"].map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setFilterCategory(cat)}
-              className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition ${
-                filterCategory === cat
-                  ? "bg-white text-black font-semibold"
-                  : "bg-[#18181b] border border-[#27272a] text-[#a1a1aa] hover:text-white"
-              }`}
-            >
-              {cat === "all" ? "Todos" : cat}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Interactive Graph Canvas Area */}
-      <div className="relative min-h-[380px] w-full overflow-hidden rounded-3xl border border-[#27272a] bg-[#0c0c0e] p-6 shadow-border">
-        {/* Subtle grid background */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-20"
-          style={{
-            backgroundImage: "radial-gradient(#ffffff 1px, transparent 1px)",
-            backgroundSize: "24px 24px"
-          }}
-        />
-
-        {/* Render Connection Lines (SVG) */}
-        <svg className="pointer-events-none absolute inset-0 size-full">
-          {NODES.flatMap((node) =>
-            node.connections.map((targetId) => {
-              const target = NODES.find((n) => n.id === targetId);
-              if (!target) return null;
-              const isHighlighted =
-                selectedNodeId === node.id || selectedNodeId === target.id;
-
-              return (
-                <line
-                  key={`${node.id}-${target.id}`}
-                  x1={`${node.x}%`}
-                  y1={`${node.y}%`}
-                  x2={`${target.x}%`}
-                  y2={`${target.y}%`}
-                  stroke={isHighlighted ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.12)"}
-                  strokeWidth={isHighlighted ? "2" : "1"}
-                  strokeDasharray={isHighlighted ? "none" : "3 3"}
-                />
-              );
-            })
-          )}
-        </svg>
-
-        {/* Node Points */}
-        {filteredNodes.map((node) => {
-          const isSelected = selectedNodeId === node.id;
-          const isNeighbor = activeNode.connections.includes(node.id);
-
-          return (
-            <motion.button
-              key={node.id}
-              type="button"
-              onClick={() => setSelectedNodeId(node.id)}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              style={{
-                left: `${node.x}%`,
-                top: `${node.y}%`
-              }}
-              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 focus:outline-none transition-all ${
-                isSelected ? "z-20 scale-105" : "z-10"
-              }`}
-            >
-              <div
-                className={`flex size-10 items-center justify-center rounded-2xl border text-xs font-bold transition-all shadow-lg ${
-                  isSelected
-                    ? "border-white bg-white text-black ring-4 ring-white/20"
-                    : isNeighbor
-                    ? "border-amber-400 bg-amber-500/20 text-amber-200"
-                    : "border-[#27272a] bg-[#18181b] text-white hover:border-white/40"
-                }`}
-              >
-                <Waypoints className="size-4" />
-              </div>
-              <span
-                className={`rounded-md px-1.5 py-0.5 text-[9px] font-medium whitespace-nowrap backdrop-blur-sm transition-colors ${
-                  isSelected
-                    ? "bg-white text-black font-semibold"
-                    : "bg-[#09090b]/80 text-[#d4d4d8] border border-white/5"
-                }`}
-              >
-                {node.label}
-              </span>
-            </motion.button>
-          );
-        })}
-      </div>
-
-      {/* Selected Node Drawer Card */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeNode.id}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="rounded-3xl border border-[#27272a] bg-[#18181b] p-5 shadow-border"
+        <button
+          className="button primary"
+          disabled={notes.length < 2}
+          onClick={() => setAdding(true)}
         >
-          <div className="flex items-center justify-between pb-3 border-b border-[#27272a] mb-3">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-mono uppercase text-white font-semibold">
-                {activeNode.category}
-              </span>
-              <span className="text-xs text-[#a1a1aa]">
-                Fonte: {FONTE_LABEL[activeNode.sourceId] || activeNode.sourceId}
-              </span>
+          <Plus size={15} />
+          Nova conexão
+        </button>
+      </div>
+      <div className="connection-toolbar">
+        <span>
+          {notes.length} notas · {relations.length} relações
+        </span>
+        <div className="segmented">
+          <button
+            className={view === "map" ? "active" : ""}
+            onClick={() => setView("map")}
+          >
+            <Network size={14} />
+            Mapa
+          </button>
+          <button
+            className={view === "list" ? "active" : ""}
+            onClick={() => setView("list")}
+          >
+            <List size={14} />
+            Lista
+          </button>
+        </div>
+      </div>
+      {!notes.length ? (
+        <Empty
+          title="Toda conexão começa com uma ideia."
+          text="Guarde duas notas para relacioná-las aqui."
+        />
+      ) : (
+        <>
+          {view === "map" && (
+            <div className="knowledge-map">
+              <svg
+                viewBox={`0 0 950 ${graphHeight}`}
+                role="img"
+                aria-label="Mapa das notas e relações"
+              >
+                <defs>
+                  <marker
+                    id="relation-arrow"
+                    viewBox="0 0 10 10"
+                    refX="10"
+                    refY="5"
+                    markerWidth="5"
+                    markerHeight="5"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+                  </marker>
+                </defs>
+                {relations.map((r) => {
+                  const a = positions.get(r.from),
+                    b = positions.get(r.to);
+                  if (!a || !b) return null;
+                  return (
+                    <line
+                      key={r.id}
+                      x1={a.x + 125}
+                      y1={a.y + 48}
+                      x2={b.x + 125}
+                      y2={b.y + 48}
+                      className={`relation-line ${r.kind}`}
+                      markerEnd="url(#relation-arrow)"
+                    />
+                  );
+                })}
+                {notes.map((n) => {
+                  const p = positions.get(n.id)!;
+                  return (
+                    <g
+                      key={n.id}
+                      transform={`translate(${p.x},${p.y})`}
+                      className={`graph-node ${selected === n.id ? "selected" : ""}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={n.title}
+                      onClick={() => setSelected(n.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelected(n.id);
+                        }
+                      }}
+                    >
+                      <rect width="260" height="96" rx="5" />
+                      <text x="16" y="24" className="graph-author">
+                        {(
+                          sources.find((s) => s.id === n.fonte)?.author ??
+                          "Fonte"
+                        ).slice(0, 30)}
+                      </text>
+                      <text x="16" y="50">
+                        {n.title.slice(0, 32)}
+                        {n.title.length > 32 ? "…" : ""}
+                      </text>
+                      <text x="16" y="77" className="graph-location">
+                        {n.paginas}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
             </div>
-
+          )}
+          <div
+            className={`connection-note-list ${view === "list" ? "shown" : ""}`}
+          >
+            {notes.map((n) => (
+              <button
+                key={n.id}
+                className={selected === n.id ? "active" : ""}
+                onClick={() => setSelected(n.id)}
+              >
+                <strong>{n.title}</strong>
+                <small>
+                  {sources.find((s) => s.id === n.fonte)?.author} · {n.paginas}
+                </small>
+              </button>
+            ))}
+          </div>
+          {active && (
+            <div className="map-inspector">
+              <div>
+                <Overline>IDEIA SELECIONADA</Overline>
+                <h2>{active.title}</h2>
+                <p>{active.claims[0] || active.content}</p>
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    selectNote(active.id);
+                    setTab("notas");
+                  }}
+                >
+                  Abrir nota e referência
+                  <ArrowUpRight size={14} />
+                </button>
+              </div>
+              <div className="inspector-relations">
+                <Overline>CONEXÕES DESTA NOTA</Overline>
+                {relations
+                  .filter((r) => r.from === active.id || r.to === active.id)
+                  .map((r) => (
+                    <div key={r.id}>
+                      <span>
+                        {r.kind === "contradiz"
+                          ? "Contradiz"
+                          : r.kind === "pre-requisito"
+                            ? "É pré-requisito de"
+                            : "Relaciona-se com"}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setSelected(r.from === active.id ? r.to : r.from)
+                        }
+                      >
+                        {
+                          notes.find(
+                            (n) =>
+                              n.id === (r.from === active.id ? r.to : r.from),
+                          )?.title
+                        }
+                        <ArrowRight size={13} />
+                      </button>
+                      <small>{r.reason.slice(0, 170)}</small>
+                      <button
+                        className="icon-button relation-delete"
+                        aria-label="Remover conexão"
+                        onClick={() => {
+                          if (confirm("Remover esta conexão?"))
+                            deleteRelation(r.id);
+                        }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                {!relations.some(
+                  (r) => r.from === active.id || r.to === active.id,
+                ) && (
+                  <p className="muted">
+                    Esta ideia ainda pode encontrar outras.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {adding && (
+        <Modal title="Nomear uma conexão" close={() => setAdding(false)}>
+          <div className="form-stack">
+            <label className="field">
+              Esta nota
+              <select value={from} onChange={(e) => setFrom(e.target.value)}>
+                {notes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Relação
+              <select
+                value={kind}
+                onChange={(e) => setKind(e.target.value as typeof kind)}
+              >
+                <option value="relaciona">Relaciona-se com</option>
+                <option value="contradiz">Contradiz</option>
+                <option value="pre-requisito">É pré-requisito de</option>
+              </select>
+            </label>
+            <label className="field">
+              Esta outra nota
+              <select value={to} onChange={(e) => setTo(e.target.value)}>
+                {notes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Por que elas se conectam?
+              <textarea
+                rows={4}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Escreva uma relação explícita entre as ideias."
+              />
+            </label>
             <button
-              type="button"
+              className="button primary"
+              disabled={!from || !to || from === to || !reason.trim()}
               onClick={() => {
-                setActiveSourceId(activeNode.sourceId);
-                setTab("estudar");
+                addRelation({
+                  from,
+                  to,
+                  kind,
+                  reason: reason.trim(),
+                  citation: [
+                    notes.find((n) => n.id === from)?.citation,
+                    notes.find((n) => n.id === to)?.citation,
+                  ]
+                    .filter(Boolean)
+                    .join("\n"),
+                });
+                setAdding(false);
+                setReason("");
               }}
-              className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1 text-xs font-semibold text-black hover:bg-neutral-200 transition"
             >
-              <BookOpen className="size-3.5" />
-              Estudar Texto
+              <Check size={15} />
+              Guardar conexão
             </button>
           </div>
-
-          <h3 className="font-display text-xl font-semibold text-white mb-1.5">
-            {activeNode.label}
-          </h3>
-
-          <p className="text-xs text-[#d4d4d8] leading-relaxed mb-4">
-            {activeNode.summary}
-          </p>
-
-          <div className="flex items-center gap-2 text-[11px] text-[#a1a1aa]">
-            <span className="font-semibold text-white">Nós conectados:</span>
-            <div className="flex flex-wrap gap-1.5">
-              {activeNode.connections.map((cId) => {
-                const target = NODES.find((n) => n.id === cId);
-                if (!target) return null;
-                return (
-                  <button
-                    key={cId}
-                    type="button"
-                    onClick={() => setSelectedNodeId(cId)}
-                    className="rounded-lg bg-[#27272a] px-2 py-0.5 text-[10px] text-[#fafafa] hover:bg-white hover:text-black transition"
-                  >
-                    {target.label} →
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </motion.div>
-      </AnimatePresence>
+        </Modal>
+      )}
     </div>
   );
 }

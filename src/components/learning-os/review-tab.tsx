@@ -1,377 +1,300 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
+  ArrowRight,
   RotateCcw,
-  Sparkles,
-  CheckCircle2,
-  Calendar,
-  Flame,
-  ChevronRight,
+  Check,
   Plus,
+  BookOpen,
   Trash2,
-  Layers,
-  HelpCircle
 } from "lucide-react";
-import confetti from "canvas-confetti";
-import { useVault, FONTE_LABEL, type Card } from "@/lib/vault/store";
-import { cn } from "@/lib/utils";
-
+import { useVault } from "@/lib/vault/store";
+import { isDue, localDay, reviewInterval } from "@/lib/vault/model";
+import { Empty, Overline, Modal } from "./ui";
 export function ReviewTab() {
-  const cards = useVault((s) => s.cards);
-  const reviewCard = useVault((s) => s.reviewCard);
-  const addCard = useVault((s) => s.addCard);
-  const deleteCard = useVault((s) => s.deleteCard);
-
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const dueCards = cards.filter((c) => c.proxima <= todayStr && c.qualidade < 3);
-  const sessionQueue = dueCards.length > 0 ? dueCards : cards.slice(0, 5);
-
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [flipped, setFlipped] = useState(false);
-  const [sessionCompleted, setSessionCompleted] = useState(false);
-  const [showDeckModal, setShowDeckModal] = useState(false);
-  const [newFront, setNewFront] = useState("");
-  const [newBack, setNewBack] = useState("");
-  const [newTag, setNewTag] = useState("Princípios");
-
-  const currentCard = sessionQueue[currentIndex] || null;
-
-  const handleRate = (rating: number) => {
-    if (!currentCard) return;
-
-    reviewCard(currentCard.id, rating);
-    setFlipped(false);
-
-    if (currentIndex + 1 < sessionQueue.length) {
-      setCurrentIndex(currentIndex + 1);
-    } else {
-      setSessionCompleted(true);
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 }
-      });
-    }
+  const {
+    cards,
+    sources,
+    reviews,
+    reviewCard,
+    addCard,
+    deleteCard,
+    setActiveSourceId,
+    setTab,
+  } = useVault((s) => s);
+  const [queue, setQueue] = useState(() =>
+    cards
+      .filter((c) => isDue(c))
+      .sort((a, b) => a.proxima.localeCompare(b.proxima))
+      .map((c) => c.id),
+  );
+  const [index, setIndex] = useState(0);
+  const [answer, setAnswer] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [deck, setDeck] = useState(false);
+  const [front, setFront] = useState("");
+  const [back, setBack] = useState("");
+  const [sourceId, setSourceId] = useState(sources[0]?.id ?? "");
+  const current = cards.find((c) => c.id === queue[index]);
+  const completed = index >= queue.length;
+  const reset = () => {
+    setQueue(
+      cards
+        .filter((c) => isDue(c))
+        .sort((a, b) => a.proxima.localeCompare(b.proxima))
+        .map((c) => c.id),
+    );
+    setIndex(0);
+    setAnswer("");
+    setRevealed(false);
   };
-
-  const handleRestart = () => {
-    setCurrentIndex(0);
-    setFlipped(false);
-    setSessionCompleted(false);
+  const rate = (rating: number) => {
+    if (!current) return;
+    reviewCard(current.id, rating, answer);
+    setIndex((i) => i + 1);
+    setAnswer("");
+    setRevealed(false);
   };
-
-  const handleCreateCard = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newFront.trim() || !newBack.trim()) return;
-
-    addCard({
-      frente: newFront.trim(),
-      verso: newBack.trim(),
-      proxima: todayStr,
-      qualidade: 1,
-      revisoes: 0,
-      fonte: "fde_guide",
-      tags: [newTag.trim()]
-    });
-
-    setNewFront("");
-    setNewBack("");
-    setShowDeckModal(false);
-  };
-
   return (
-    <div className="space-y-6">
-      {/* Header and Stats */}
-      <div className="flex items-center justify-between">
+    <div className="review-page">
+      <div className="page-heading">
         <div>
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-white">
-            Repetição Espaçada
-          </h2>
-          <p className="text-xs text-[#a1a1aa]">
-            Fixação mnemônica ativa via algoritmos de curva do esquecimento
-          </p>
+          <Overline>LEMBRAR TAMBÉM É APRENDER</Overline>
+          <h1>
+            Uma ideia de cada vez<span className="title-period">.</span>
+          </h1>
+          <p>Responda de memória. Depois, volte à fonte.</p>
         </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-400">
-            <Flame className="size-3.5 fill-amber-400" />
-            <span>5 dias streak</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowDeckModal(true)}
-            className="rounded-full border border-[#27272a] bg-[#18181b] p-2 text-[#a1a1aa] hover:border-white/20 hover:text-white transition"
-            title="Ver Baralho Completo"
-          >
-            <Layers className="size-4" />
+        <div className="heading-actions">
+          <button className="button subtle" onClick={() => setDeck(true)}>
+            Meus cartões
+          </button>
+          <button className="button" onClick={() => setAdding(true)}>
+            <Plus size={15} />
+            Novo cartão
           </button>
         </div>
       </div>
-
-      {/* Progress pill indicator */}
-      {!sessionCompleted && currentCard && (
-        <div className="flex items-center justify-between rounded-2xl border border-[#27272a] bg-[#18181b] px-4 py-3 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-[#71717a]">
-              Sessão Ativa
-            </span>
-            <span className="font-mono text-white font-semibold">
-              {currentIndex + 1} / {sessionQueue.length}
-            </span>
+      {completed ? (
+        <div className="review-complete">
+          <div className="review-complete-icon">
+            <Check size={28} strokeWidth={1.2} />
           </div>
-
-          <div className="flex items-center gap-1.5">
-            <div className="h-1.5 w-28 rounded-full bg-[#27272a] overflow-hidden">
-              <div
-                className="h-full bg-white transition-all duration-300"
-                style={{ width: `${((currentIndex + 1) / sessionQueue.length) * 100}%` }}
-              />
-            </div>
-            <span className="text-[10px] text-[#71717a]">
-              {dueCards.length} pendentes
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Spaced repetition flashcard session */}
-      {sessionCompleted ? (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="rounded-3xl border border-[#27272a] bg-[#18181b] p-8 text-center shadow-border space-y-4"
-        >
-          <div className="mx-auto size-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-            <CheckCircle2 className="size-7" />
-          </div>
-
-          <h3 className="font-display text-2xl font-semibold text-white">
-            Sessão Concluída!
-          </h3>
-
-          <p className="text-xs text-[#a1a1aa] max-w-sm mx-auto leading-relaxed">
-            Você revisou todos os conceitos agendados para hoje. Sua retenção sináptica está calibrada.
+          <Overline>
+            {queue.length ? "SESSÃO CONCLUÍDA" : "SEM REVISÕES PARA HOJE"}
+          </Overline>
+          <h2>
+            {queue.length
+              ? "Uma ideia mais perto."
+              : "Sua memória tem seu tempo."}
+          </h2>
+          <p>
+            {queue.length
+              ? `${queue.length} cartões percorridos. Suas respostas e os próximos intervalos estão guardados.`
+              : "Os cartões voltam na data marcada, inclusive aqueles que você já achou fáceis."}
           </p>
-
-          <div className="flex items-center justify-center gap-3 pt-3">
-            <button
-              type="button"
-              onClick={handleRestart}
-              className="flex items-center gap-2 rounded-2xl bg-white px-5 py-2.5 text-xs font-semibold text-black hover:bg-neutral-200 transition"
-            >
-              <RotateCcw className="size-3.5" />
-              Revisar Novamente
-            </button>
-          </div>
-        </motion.div>
-      ) : currentCard ? (
-        <div className="space-y-4">
-          {/* Tactile Motion Flashcard Container with Flip Animation */}
-          <div
-            className="relative min-h-[340px] w-full cursor-pointer perspective-1000"
-            onClick={() => setFlipped(!flipped)}
+          <button className="button" onClick={reset}>
+            <RotateCcw size={15} />
+            Atualizar fila
+          </button>
+          <button
+            className="text-button"
+            onClick={() => {
+              setQueue(cards.map((c) => c.id));
+              setIndex(0);
+              setAnswer("");
+              setRevealed(false);
+            }}
           >
-            <motion.div
-              className="relative size-full min-h-[340px] rounded-3xl border border-[#27272a] bg-gradient-to-b from-[#18181b] to-[#121214] p-6 text-white shadow-border flex flex-col justify-between transition-all hover:border-white/20 select-none"
-              animate={{ rotateY: flipped ? 180 : 0 }}
-              transition={{ duration: 0.45, ease: "easeOut" }}
-              style={{ transformStyle: "preserve-3d" }}
-            >
-              {!flipped ? (
-                /* Card Front */
-                <div className="flex flex-col justify-between size-full flex-1">
-                  <div>
-                    <div className="flex items-center justify-between pb-3 border-b border-white/5 mb-6">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-[#a1a1aa]">
-                        Pergunta · {FONTE_LABEL[currentCard.fonte] || currentCard.fonte}
-                      </span>
-                      <span className="rounded-md bg-white/5 px-2 py-0.5 text-[9px] font-mono text-amber-400">
-                        Nível {currentCard.qualidade}/5
-                      </span>
-                    </div>
-
-                    <h3 className="font-display text-xl font-medium leading-snug text-white">
-                      {currentCard.frente}
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-4 border-t border-white/5 text-xs text-[#71717a]">
-                    <div className="flex items-center gap-1.5">
-                      {currentCard.tags.map((t) => (
-                        <span key={t} className="rounded-full bg-white/5 px-2 py-0.5 text-[10px]">
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                    <span className="flex items-center gap-1 text-[11px] text-[#a1a1aa] font-medium">
-                      Toque para virar o card →
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                /* Card Back */
-                <div
-                  className="flex flex-col justify-between size-full flex-1"
-                  style={{ transform: "rotateY(180deg)" }}
-                >
-                  <div>
-                    <div className="flex items-center justify-between pb-3 border-b border-white/5 mb-6">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
-                        ✓ Resposta / Síntese
-                      </span>
-                      <span className="text-[10px] font-mono text-[#71717a]">
-                        Revisões: {currentCard.revisoes}
-                      </span>
-                    </div>
-
-                    <p className="font-serif text-base leading-relaxed text-[#fafafa] bg-white/[0.03] p-4 rounded-2xl border border-white/5">
-                      {currentCard.verso}
-                    </p>
-                  </div>
-
-                  <div className="pt-4 border-t border-white/5 text-center">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#a1a1aa] mb-2">
-                      Como foi sua recordação ativa?
-                    </p>
-                  </div>
-                </div>
-              )}
-            </motion.div>
+            Praticar todos os cartões
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      ) : current ? (
+        <div className="review-studio">
+          <div className="review-session-meta">
+            <span>
+              {String(index + 1).padStart(2, "0")} /{" "}
+              {String(queue.length).padStart(2, "0")}
+            </span>
+            <span>
+              {sources.find((s) => s.id === current.fonte)?.author} ·{" "}
+              {current.location || "Notas salvas"}
+            </span>
           </div>
-
-          {/* Spaced Repetition Rating Buttons */}
-          <div className="grid grid-cols-4 gap-2">
+          <article className="review-card">
+            <Overline>
+              {revealed ? "SUA RESPOSTA E A FONTE" : "LEMBRE ANTES DE CONFERIR"}
+            </Overline>
+            <h2>{current.frente}</h2>
+            {!revealed ? (
+              <>
+                <label className="field review-answer">
+                  <span className="visually-hidden">Sua resposta</span>
+                  <textarea
+                    rows={5}
+                    value={answer}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    placeholder="O que você lembra, sem consultar as notas?"
+                  />
+                </label>
+                <button
+                  className="button primary"
+                  disabled={!answer.trim()}
+                  onClick={() => setRevealed(true)}
+                >
+                  Conferir com a fonte
+                  <ArrowRight size={16} />
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="learner-answer">
+                  <Overline>VOCÊ ESCREVEU</Overline>
+                  <p>{answer}</p>
+                </div>
+                <div className="source-answer">
+                  <Overline>A NOTA REGISTRA</Overline>
+                  <p>{current.verso}</p>
+                </div>
+                <div className="review-ratings">
+                  {[
+                    { rating: 1, label: "Ainda difícil" },
+                    { rating: 2, label: "Com esforço" },
+                    { rating: 3, label: "Lembrei" },
+                    { rating: 5, label: "Fácil" },
+                  ].map((r) => (
+                    <button key={r.rating} onClick={() => rate(r.rating)}>
+                      <strong>{r.label}</strong>
+                      <small>{reviewInterval(current, r.rating)} dias</small>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </article>
+          <div className="review-footer">
             <button
-              type="button"
-              onClick={() => handleRate(1)}
-              className="flex flex-col items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-red-400 transition hover:bg-red-500/20 active:scale-95"
+              className="text-button"
+              onClick={() => {
+                setActiveSourceId(current.fonte);
+                setTab("estudar");
+              }}
             >
-              <span className="text-[11px] font-bold">Errei</span>
-              <span className="text-[9px] opacity-70">1 dia</span>
+              <BookOpen size={14} />
+              Consultar fonte
             </button>
             <button
-              type="button"
-              onClick={() => handleRate(2)}
-              className="flex flex-col items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-400 transition hover:bg-amber-500/20 active:scale-95"
+              className="text-button"
+              onClick={() => {
+                setIndex((i) => i + 1);
+                setAnswer("");
+                setRevealed(false);
+              }}
             >
-              <span className="text-[11px] font-bold">Difícil</span>
-              <span className="text-[9px] opacity-70">2 dias</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRate(3)}
-              className="flex flex-col items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10 p-3 text-blue-400 transition hover:bg-blue-500/20 active:scale-95"
-            >
-              <span className="text-[11px] font-bold">Bom</span>
-              <span className="text-[9px] opacity-70">4 dias</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRate(5)}
-              className="flex flex-col items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-400 transition hover:bg-emerald-500/20 active:scale-95"
-            >
-              <span className="text-[11px] font-bold">Fácil</span>
-              <span className="text-[9px] opacity-70">7 dias</span>
+              Pular por enquanto
+              <ArrowRight size={14} />
             </button>
           </div>
         </div>
-      ) : null}
-
-      {/* Deck & Schedule Modal */}
-      <AnimatePresence>
-        {showDeckModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-[#27272a] bg-[#18181b] p-6 text-white shadow-border"
+      ) : (
+        <Empty
+          title="Este cartão foi removido."
+          text="Atualize a fila para continuar."
+          action={
+            <button className="button" onClick={reset}>
+              Atualizar fila
+            </button>
+          }
+        />
+      )}
+      <div className="review-history-note">
+        {reviews.length} respostas guardadas · {cards.length} cartões no caderno
+      </div>
+      {adding && (
+        <Modal title="Criar cartão" close={() => setAdding(false)}>
+          <div className="form-stack">
+            <label className="field">
+              Pergunta
+              <textarea
+                autoFocus
+                rows={3}
+                value={front}
+                onChange={(e) => setFront(e.target.value)}
+              />
+            </label>
+            <label className="field">
+              Resposta da fonte
+              <textarea
+                rows={4}
+                value={back}
+                onChange={(e) => setBack(e.target.value)}
+              />
+            </label>
+            <label className="field">
+              Fonte
+              <select
+                value={sourceId}
+                onChange={(e) => setSourceId(e.target.value)}
+              >
+                {sources.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="button primary"
+              disabled={!front.trim() || !back.trim() || !sourceId}
+              onClick={() => {
+                const target = addCard({
+                  frente: front.trim(),
+                  verso: back.trim(),
+                  fonte: sourceId,
+                  tags: [
+                    sources.find((s) => s.id === sourceId)?.topic ?? "Estudo",
+                  ],
+                  proxima: localDay(),
+                  qualidade: 1,
+                  revisoes: 0,
+                });
+                setQueue((q) => [...q, target]);
+                setAdding(false);
+                setFront("");
+                setBack("");
+              }}
             >
-              <div className="flex items-center justify-between pb-3 border-b border-[#27272a] mb-4">
-                <div>
-                  <h3 className="font-display text-lg font-semibold">Baralho de Cards ({cards.length})</h3>
-                  <p className="text-xs text-[#a1a1aa]">Gerencie ou adicione perguntas para memorização</p>
-                </div>
+              Guardar cartão
+              <Check size={15} />
+            </button>
+          </div>
+        </Modal>
+      )}
+      {deck && (
+        <Modal title="Seus cartões" close={() => setDeck(false)} wide>
+          <div className="deck-list">
+            {cards.map((c) => (
+              <div key={c.id}>
+                <strong>{c.frente}</strong>
+                <small>
+                  Rever em {c.proxima.split("-").reverse().join("/")} ·{" "}
+                  {c.revisoes} revisões
+                </small>
                 <button
-                  type="button"
-                  onClick={() => setShowDeckModal(false)}
-                  className="rounded-full p-1 text-[#71717a] hover:text-white"
+                  className="icon-button"
+                  aria-label="Remover cartão"
+                  onClick={() => {
+                    if (confirm("Remover este cartão?")) deleteCard(c.id);
+                  }}
                 >
-                  ✕
+                  <Trash2 size={14} />
                 </button>
               </div>
-
-              {/* Quick Card Form */}
-              <form onSubmit={handleCreateCard} className="space-y-3 mb-6 rounded-2xl bg-[#09090b] p-4 border border-white/5">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-400 block">
-                  Criar Novo Card
-                </span>
-                <input
-                  type="text"
-                  required
-                  placeholder="Pergunta do card (Frente)..."
-                  value={newFront}
-                  onChange={(e) => setNewFront(e.target.value)}
-                  className="w-full rounded-xl border border-[#27272a] bg-[#18181b] px-3 py-2 text-xs text-white outline-none focus:border-white/40"
-                />
-                <textarea
-                  rows={2}
-                  required
-                  placeholder="Resposta exata (Verso)..."
-                  value={newBack}
-                  onChange={(e) => setNewBack(e.target.value)}
-                  className="w-full rounded-xl border border-[#27272a] bg-[#18181b] px-3 py-2 text-xs text-white outline-none focus:border-white/40 resize-none"
-                />
-                <div className="flex justify-between items-center">
-                  <input
-                    type="text"
-                    placeholder="Tag (ex: Arquitetura)"
-                    value={newTag}
-                    onChange={(e) => setNewTag(e.target.value)}
-                    className="w-36 rounded-xl border border-[#27272a] bg-[#18181b] px-2.5 py-1 text-xs text-white outline-none"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-xl bg-white px-3.5 py-1.5 text-xs font-semibold text-black hover:bg-neutral-200"
-                  >
-                    Salvar Card
-                  </button>
-                </div>
-              </form>
-
-              {/* Cards List */}
-              <div className="space-y-2.5">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#71717a]">
-                  Cards Cadastrados
-                </span>
-                {cards.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-start justify-between gap-3 rounded-2xl border border-[#27272a] bg-[#09090b]/80 p-3.5 text-xs"
-                  >
-                    <div>
-                      <p className="font-semibold text-white mb-1">{c.frente}</p>
-                      <p className="text-[#a1a1aa] text-[11px] line-clamp-2">{c.verso}</p>
-                      <div className="flex items-center gap-2 mt-2 text-[10px] font-mono text-[#71717a]">
-                        <span>Próxima: {c.proxima}</span>
-                        <span>· Qualidade: {c.qualidade}/5</span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => deleteCard(c.id)}
-                      className="text-[#71717a] hover:text-red-400 p-1"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
+            ))}
           </div>
-        )}
-      </AnimatePresence>
+        </Modal>
+      )}
     </div>
   );
 }
