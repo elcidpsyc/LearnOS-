@@ -84,7 +84,9 @@ export async function writeWorkspace(
         access: "private",
         contentType: "application/json",
         addRandomSuffix: false,
-        ...(current ? { ifMatch: current.etag } : { allowOverwrite: false }),
+        ...(current
+          ? { allowOverwrite: true, ifMatch: current.etag }
+          : { allowOverwrite: false }),
       },
     );
   } catch (e) {
@@ -125,7 +127,9 @@ export async function limit(key: string, count: number, seconds: number) {
       access: "private",
       addRandomSuffix: false,
       contentType: "application/json",
-      ...(etag ? { ifMatch: etag } : { allowOverwrite: false }),
+      ...(etag
+        ? { allowOverwrite: true, ifMatch: etag }
+        : { allowOverwrite: false }),
     });
   } catch (e) {
     if (
