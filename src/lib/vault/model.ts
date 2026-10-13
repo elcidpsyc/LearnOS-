@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Card, Settings, VaultData, Tombstone } from "./types";
+import type { Card, Settings, VaultData, Tombstone } from "./types.js";
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: "paper",

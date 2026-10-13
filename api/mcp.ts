@@ -5,9 +5,9 @@ import {
   json,
   failure,
   HttpError,
-} from "../server/storage";
-import { article } from "../server/article";
-import { sourceDraft } from "../src/lib/study/source";
+} from "../server/storage.js";
+import { article } from "../server/article.js";
+import { sourceDraft } from "../src/lib/study/source.js";
 export const maxDuration = 30;
 const tools = [
   {

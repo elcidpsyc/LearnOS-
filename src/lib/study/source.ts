@@ -1,4 +1,4 @@
-import type { Source, Paragraph } from "../vault/types";
+import type { Source, Paragraph } from "../vault/types.js";
 export const sourceColors = [
   "#79639a",
   "#8b845a",

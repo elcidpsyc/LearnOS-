@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "types": ["node"]
+  },
+  "include": [
+    "./*.ts",
+    "../server/**/*.ts",
+    "../src/lib/vault/model.ts",
+    "../src/lib/vault/types.ts",
+    "../src/lib/study/source.ts"
+  ]
+}

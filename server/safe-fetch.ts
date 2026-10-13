@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { HttpError } from "./storage";
+import { HttpError } from "./storage.js";
 export function isPublicAddress(address: string) {
   if (isIP(address) === 4) {
     const [a, b] = address.split(".").map(Number);

@@ -4,7 +4,7 @@ import {
   hash,
   failure,
   HttpError,
-} from "../server/storage";
+} from "../server/storage.js";
 export async function GET(req: Request) {
   try {
     const auth = await authorizedWorkspace(req);

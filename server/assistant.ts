@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { HttpError } from "./storage";
+import { HttpError } from "./storage.js";
 export const MODELS = {
   openai: "openai/gpt-5.4-mini",
   anthropic: "anthropic/claude-sonnet-5.5",

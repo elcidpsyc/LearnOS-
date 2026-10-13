@@ -1,5 +1,5 @@
-import { aiReady, MODELS } from "../server/assistant";
-import { storageReady, json } from "../server/storage";
+import { aiReady, MODELS } from "../server/assistant.js";
+import { storageReady, json } from "../server/storage.js";
 export function GET() {
   return json({
     available: aiReady(),

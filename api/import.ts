@@ -6,8 +6,8 @@ import {
   limit,
   hash,
   HttpError,
-} from "../server/storage";
-import { article } from "../server/article";
+} from "../server/storage.js";
+import { article } from "../server/article.js";
 export const maxDuration = 30;
 export async function POST(req: Request) {
   try {

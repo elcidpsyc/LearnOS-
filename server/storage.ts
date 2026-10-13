@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { get, put, BlobPreconditionFailedError } from "@vercel/blob";
-import { vaultSchema } from "../src/lib/vault/model";
-import type { VaultData } from "../src/lib/vault/types";
+import { vaultSchema } from "../src/lib/vault/model.js";
+import type { VaultData } from "../src/lib/vault/types.js";
 export const storageReady = () =>
   Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 export const hash = (value: string) =>

@@ -6,7 +6,7 @@ import {
   json,
   failure,
   HttpError,
-} from "../server/storage";
+} from "../server/storage.js";
 export async function POST(req: Request) {
   try {
     const auth = await authorizedWorkspace(req);

@@ -1,7 +1,7 @@
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
-import { publicHTML } from "./safe-fetch";
-import { HttpError } from "./storage";
+import { publicHTML } from "./safe-fetch.js";
+import { HttpError } from "./storage.js";
 export async function article(url: string) {
   const fetched = await publicHTML(url);
   const { document } = parseHTML(fetched.html);

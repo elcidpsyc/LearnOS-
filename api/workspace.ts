@@ -7,9 +7,9 @@ import {
   failure,
   HttpError,
   limit,
-} from "../server/storage";
-import { vaultSchema } from "../src/lib/vault/model";
-import type { VaultData } from "../src/lib/vault/types";
+} from "../server/storage.js";
+import { vaultSchema } from "../src/lib/vault/model.js";
+import type { VaultData } from "../src/lib/vault/types.js";
 export async function GET(req: Request) {
   try {
     const current = await readWorkspace(bearer(req));

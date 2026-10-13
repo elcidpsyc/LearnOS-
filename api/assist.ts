@@ -5,8 +5,8 @@ import {
   failure,
   limit,
   hash,
-} from "../server/storage";
-import { respond } from "../server/assistant";
+} from "../server/storage.js";
+import { respond } from "../server/assistant.js";
 export const maxDuration = 60;
 export async function POST(req: Request) {
   try {
