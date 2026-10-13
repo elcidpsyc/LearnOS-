@@ -1,140 +1,288 @@
-import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, Library, RotateCcw, StickyNote, Waypoints, Sparkles } from "lucide-react";
+import {
+  Component,
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  BookOpen,
+  Library,
+  RotateCcw,
+  NotebookPen,
+  Waypoints,
+  Settings2,
+  CloudCheck,
+  HardDrive,
+  ArrowLeft,
+  Menu,
+  Search,
+  X,
+} from "lucide-react";
+import { MotionConfig } from "framer-motion";
 import { Toaster } from "sonner";
-import { cn } from "@/lib/utils";
 import { hydrateVault, useVault, type TabId } from "@/lib/vault/store";
-import { getAiStatus } from "@/lib/study/ai";
-import { StudyTab } from "./study-tab";
-import { NotesTab } from "./notes-tab";
-import { ReviewTab } from "./review-tab";
-import { MapTab } from "./map-tab";
-import { SourcesTab } from "./sources-tab";
-import { TranslatorPopup } from "./translator-popup";
-
-const TABS: { id: TabId; label: string; icon: any }[] = [
-  { id: "estudar", label: "Estudar", icon: BookOpen },
-  { id: "notas", label: "Notas", icon: StickyNote },
+import { isDue } from "@/lib/vault/model";
+const StudyTab = lazy(() =>
+  import("./study-tab").then((m) => ({ default: m.StudyTab })),
+);
+const SourcesTab = lazy(() =>
+  import("./sources-tab").then((m) => ({ default: m.SourcesTab })),
+);
+const NotesTab = lazy(() =>
+  import("./notes-tab").then((m) => ({ default: m.NotesTab })),
+);
+const ReviewTab = lazy(() =>
+  import("./review-tab").then((m) => ({ default: m.ReviewTab })),
+);
+const MapTab = lazy(() =>
+  import("./map-tab").then((m) => ({ default: m.MapTab })),
+);
+import { WorkspaceSettings } from "./settings";
+import { Modal } from "./ui";
+const tabs = [
+  { id: "fontes", label: "Biblioteca", icon: Library },
+  { id: "estudar", label: "Ler", icon: BookOpen },
+  { id: "notas", label: "Notas", icon: NotebookPen },
   { id: "revisar", label: "Revisar", icon: RotateCcw },
-  { id: "mapa", label: "Mapa", icon: Waypoints },
-  { id: "fontes", label: "Fontes", icon: Library },
-];
-
+  { id: "mapa", label: "Conexões", icon: Waypoints },
+] as const;
 export function LearningOS() {
-  const tab = useVault((s) => s.tab);
-  const setTab = useVault((s) => s.setTab);
-  const cards = useVault((s) => s.cards);
-  const [aiOn, setAiOn] = useState(false);
-
+  const {
+    tab,
+    setTab,
+    settings,
+    hydrated,
+    cards,
+    cloudStatus,
+    setSettingsOpen,
+    settingsOpen,
+    storageError,
+    sources,
+    notes,
+    setActiveSourceId,
+    selectNote,
+  } = useVault((s) => s);
+  const [search, setSearch] = useState(false);
+  const [query, setQuery] = useState("");
+  useEffect(() => hydrateVault(), []);
   useEffect(() => {
-    useVault.setState({ hydrated: true });
-    hydrateVault();
-    void getAiStatus().then((r) => setAiOn(Boolean(r?.available))).catch(() => setAiOn(false));
+    document.documentElement.dataset.theme = settings.theme;
+    document.documentElement.style.setProperty("--pen", settings.penColor);
+    document.documentElement.style.setProperty(
+      "--highlight",
+      settings.highlightColor,
+    );
+  }, [settings.theme, settings.penColor, settings.highlightColor]);
+  useEffect(() => {
+    const open = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearch((v) => !v);
+      }
+    };
+    document.addEventListener("keydown", open);
+    return () => document.removeEventListener("keydown", open);
   }, []);
-
-  const due = cards.filter((c) => c.proxima <= new Date().toISOString().slice(0, 10) && c.qualidade < 3).length;
-
+  const due = cards.filter((c) => isDue(c)).length;
+  if (!hydrated)
+    return (
+      <div className="boot-screen">
+        <BookOpen size={30} />
+        <p>Abrindo seu caderno…</p>
+      </div>
+    );
+  const focused = settings.focus && tab === "estudar";
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col bg-[#09090b] text-[#fafafa] selection:bg-white selection:text-black">
-      {/* Studio Header */}
-      <header className="sticky top-0 z-20 px-6 py-6 transition-all duration-300 backdrop-blur-xl bg-[#09090b]/85 border-b border-white/[0.04]">
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }} 
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between"
-        >
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a1a1aa]">Learning OS</p>
-              <span className="size-1 rounded-full bg-[#71717a]" />
-              <span className="text-[10px] font-mono text-[#71717a] flex items-center gap-1">
-                <Sparkles className="size-2.5 text-amber-400" /> Nutlope Dynamic
-              </span>
-            </div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight text-white md:text-3xl">
-              Entender e lembrar
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-[#d4d4d8]">
-              <span className={`size-1.5 rounded-full ${aiOn ? "bg-emerald-400 animate-pulse" : "bg-zinc-500"}`} />
-              <span className="text-[10px] uppercase font-mono">IA Ativa</span>
-            </div>
-          </div>
-        </motion.div>
-      </header>
-
-      {/* Main Content View with Framer Motion AnimatePresence Transitions */}
-      <main className="flex-1 px-6 pt-6 pb-32">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={tab}
-            initial={{ opacity: 0, y: 15, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -15, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+    <MotionConfig reducedMotion="user">
+      <div className={`app ${focused ? "focus-mode" : ""}`}>
+        <header className="app-header">
+          <button
+            className="brand"
+            onClick={() => setTab("fontes")}
+            aria-label="LearnOS — abrir biblioteca"
           >
-            {due > 0 && tab !== "revisar" && (
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setTab("revisar")}
-                className="mb-6 flex w-full items-center justify-between rounded-2xl border border-[#27272a] bg-[#18181b] px-4 py-3.5 text-sm transition-all hover:bg-[#27272a] shadow-sm"
+            <span className="brand-symbol">
+              <span />
+              <span />
+              <span />
+            </span>
+            <span>
+              Learn<span className="brand-os">OS</span>
+            </span>
+          </button>
+          <nav className="desktop-nav" aria-label="Navegação principal">
+            {tabs.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                className={tab === id ? "active" : ""}
+                onClick={() => setTab(id)}
               >
-                <span className="flex items-center gap-2.5 text-xs font-medium text-white">
-                  <div className="size-2 rounded-full bg-red-500 animate-pulse" />
-                  Revisar {due} card{due > 1 ? "s" : ""} pendentes na fila
-                </span>
-                <span className="text-xs font-semibold text-[#a1a1aa] hover:text-white">
-                  Abrir agora →
-                </span>
-              </motion.button>
-            )}
-            
-            {tab === "estudar" && <StudyTab aiOn={aiOn} />}
+                <Icon size={14} />
+                {label}
+                {id === "revisar" && due > 0 && (
+                  <span className="count-dot">{due}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+          <div className="header-actions">
+            <span className="save-status">
+              {cloudStatus === "synced" ? (
+                <CloudCheck size={13} />
+              ) : (
+                <HardDrive size={13} />
+              )}
+              <span>
+                {cloudStatus === "synced" ? "Sincronizado" : "Neste aparelho"}
+              </span>
+            </span>
+            <button
+              className="icon-button"
+              aria-label="Buscar no caderno"
+              title="Buscar · Ctrl K"
+              onClick={() => setSearch(true)}
+            >
+              <Search size={17} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="Meu espaço"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <Settings2 size={17} />
+            </button>
+          </div>
+        </header>
+        {storageError && (
+          <div className="storage-banner" role="alert">
+            {storageError}
+            <button onClick={() => setSettingsOpen(true)}>Abrir backup</button>
+          </div>
+        )}
+        <main className={`workspace workspace-${tab}`}>
+          <Suspense
+            fallback={
+              <div className="empty-state">Abrindo esta parte do caderno…</div>
+            }
+          >
+            {tab === "fontes" && <SourcesTab />}
+            {tab === "estudar" && <StudyTab />}
             {tab === "notas" && <NotesTab />}
             {tab === "revisar" && <ReviewTab />}
             {tab === "mapa" && <MapTab />}
-            {tab === "fontes" && <SourcesTab aiOn={aiOn} />}
-          </motion.div>
-        </AnimatePresence>
-      </main>
-
-      {/* Floating Nav Pill - Estilo Nutlope */}
-      <nav className="fixed bottom-6 left-1/2 z-50 w-[calc(100%-2.5rem)] max-w-[420px] -translate-x-1/2">
-        <ul className="grid grid-cols-5 gap-1 rounded-full border border-white/10 bg-[#18181b]/85 p-1.5 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.85)]">
-          {TABS.map((item) => {
-            const Icon = item.icon;
-            const active = tab === item.id;
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => setTab(item.id)}
-                  className={cn(
-                    "relative flex min-h-12 w-full flex-col items-center justify-center gap-1 rounded-full transition-all duration-300",
-                    active ? "text-white" : "text-[#71717a] hover:text-[#d4d4d8]"
-                  )}
-                >
-                  {active && (
-                    <motion.div 
-                      layoutId="nav-pill" 
-                      className="absolute inset-0 rounded-full bg-white/10 ring-1 ring-white/20" 
-                      transition={{ type: "spring", bounce: 0.2, duration: 0.5 }}
-                    />
-                  )}
-                  <Icon className={cn("size-4 z-10", active ? "stroke-[2.5px] text-white" : "stroke-[1.5px]")} />
-                  <span className="z-10 text-[9px] font-bold uppercase tracking-tight">{item.label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
-
-      {/* Floating Pop-over & Toaster */}
-      <TranslatorPopup />
-      <Toaster position="top-center" richColors theme="dark" />
-    </div>
+          </Suspense>
+        </main>
+        <nav className="mobile-nav" aria-label="Navegação móvel">
+          {tabs.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              className={tab === id ? "active" : ""}
+              onClick={() => setTab(id)}
+              aria-label={label}
+            >
+              <Icon size={20} />
+              <span>{label}</span>
+              {id === "revisar" && due > 0 && <i />}
+            </button>
+          ))}
+        </nav>
+        {settingsOpen && <WorkspaceSettings />}
+        {search && (
+          <Modal title="Buscar no caderno" close={() => setSearch(false)}>
+            <label className="field">
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Título, autor ou ideia…"
+                aria-label="Busca global"
+              />
+            </label>
+            <div className="global-results">
+              {query.trim() && (
+                <>
+                  {sources
+                    .filter((s) =>
+                      `${s.title} ${s.author}`
+                        .toLowerCase()
+                        .includes(query.toLowerCase()),
+                    )
+                    .map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          setActiveSourceId(s.id);
+                          setTab("estudar");
+                          setSearch(false);
+                        }}
+                      >
+                        <BookOpen size={16} />
+                        <span>
+                          {s.title}
+                          <small>{s.author} · Fonte</small>
+                        </span>
+                      </button>
+                    ))}
+                  {notes
+                    .filter((n) =>
+                      `${n.title} ${n.content}`
+                        .toLowerCase()
+                        .includes(query.toLowerCase()),
+                    )
+                    .map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => {
+                          selectNote(n.id);
+                          setTab("notas");
+                          setSearch(false);
+                        }}
+                      >
+                        <NotebookPen size={16} />
+                        <span>
+                          {n.title}
+                          <small>Nota</small>
+                        </span>
+                      </button>
+                    ))}
+                </>
+              )}
+            </div>
+          </Modal>
+        )}
+        <Toaster
+          position="bottom-right"
+          theme={settings.theme === "night" ? "dark" : "light"}
+        />
+      </div>
+    </MotionConfig>
   );
+}
+export class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: Error) {
+    console.error("learnos_ui_error", { name: error.name });
+  }
+  render() {
+    return this.state.failed ? (
+      <div className="boot-screen">
+        <BookOpen size={28} />
+        <h2>Seu caderno foi preservado.</h2>
+        <p>Esta tela não pôde ser aberta. Recarregue para tentar novamente.</p>
+        <button className="button" onClick={() => location.reload()}>
+          Reabrir LearnOS
+        </button>
+      </div>
+    ) : (
+      this.props.children
+    );
+  }
 }

@@ -3,8 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { LearningOS } from "./components/learning-os/app";
+import { LearningOS, AppErrorBoundary } from "./components/learning-os/app";
 
 export default function App() {
-  return <LearningOS />;
+  return (
+    <AppErrorBoundary>
+      <LearningOS />
+    </AppErrorBoundary>
+  );
 }

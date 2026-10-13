@@ -1,472 +1,678 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
 import {
   Plus,
   Search,
-  Tag,
+  ArrowRight,
+  ArrowUpRight,
   Trash2,
-  Edit3,
   Check,
-  X,
-  ExternalLink,
+  NotebookPen,
+  Sparkles,
+  GitCompareArrows,
+  MessageCircle,
   BookOpen,
-  Sparkles
+  Edit3,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useVault, FONTE_LABEL, type Note } from "@/lib/vault/store";
-
+import { toast } from "sonner";
+import { useVault } from "@/lib/vault/store";
+import { localDay } from "@/lib/vault/model";
+import type { Note } from "@/lib/vault/types";
+import { assist, type AssistResult } from "@/lib/study/ai";
+import { Modal, Empty, Overline } from "./ui";
 export function NotesTab() {
-  const notes = useVault((s) => s.notes);
-  const selectedNoteId = useVault((s) => s.selectedNoteId);
-  const selectNote = useVault((s) => s.selectNote);
-  const addNote = useVault((s) => s.addNote);
-  const updateNote = useVault((s) => s.updateNote);
-  const deleteNote = useVault((s) => s.deleteNote);
-  const addCard = useVault((s) => s.addCard);
-  const setActiveSourceId = useVault((s) => s.setActiveSourceId);
-  const setTab = useVault((s) => s.setTab);
-
-  const [search, setSearch] = useState("");
-  const [selectedTag, setSelectedTag] = useState<string>("all");
-  const [isCreating, setIsCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newContent, setNewContent] = useState("");
-  const [newTag, setNewTag] = useState("Ideias");
-  const [newSource, setNewSource] = useState("fde_guide");
-  const [newPages, setNewPages] = useState("1");
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editContent, setEditContent] = useState("");
-
-  const activeNote = notes.find((n) => n.id === selectedNoteId) || null;
-
-  // Collect all unique tags
-  const allTags = Array.from(new Set(notes.flatMap((n) => n.tags)));
-
-  const filteredNotes = notes.filter((n) => {
-    const matchesSearch =
-      n.title.toLowerCase().includes(search.toLowerCase()) ||
-      n.content.toLowerCase().includes(search.toLowerCase()) ||
-      n.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()));
-
-    const matchesTag = selectedTag === "all" || n.tags.includes(selectedTag);
-    return matchesSearch && matchesTag;
-  });
-
-  const handleCreateNote = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle.trim()) return;
-
-    addNote({
-      title: newTitle.trim(),
-      content: newContent.trim() || "Sem detalhes adicionais.",
-      fonte: newSource,
-      paginas: `p. ${newPages}`,
-      tags: [newTag.trim() || "Geral"],
-      createdAt: new Date().toISOString().slice(0, 10),
-      highlights: []
-    });
-
-    setNewTitle("");
-    setNewContent("");
-    setIsCreating(false);
+  const {
+    notes,
+    sources,
+    selectedNoteId,
+    selectNote,
+    addNote,
+    updateNote,
+    deleteNote,
+    addCard,
+    setActiveSourceId,
+    setTab,
+  } = useVault((s) => s);
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [workbench, setWorkbench] = useState<
+    "distill" | "socratic" | "compare" | null
+  >(null);
+  const [title, setTitle] = useState("");
+  const [claims, setClaims] = useState("");
+  const [commentary, setCommentary] = useState("");
+  const [sourceId, setSourceId] = useState(sources[0]?.id ?? "");
+  const [location, setLocation] = useState("");
+  const [questions, setQuestions] = useState("");
+  const active = notes.find((n) => n.id === selectedNoteId) ?? notes[0];
+  const filtered = notes.filter((n) =>
+    `${n.title} ${n.content} ${n.tags.join(" ")}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+  const reset = () => {
+    setTitle("");
+    setClaims("");
+    setCommentary("");
+    setQuestions("");
+    setLocation("");
+    setCreating(true);
   };
-
-  const handleStartEdit = (note: Note) => {
-    setEditTitle(note.title);
-    setEditContent(note.content);
-    setIsEditing(true);
+  const edit = () => {
+    if (!active) return;
+    setTitle(active.title);
+    setClaims(active.claims.join("\n"));
+    setCommentary(active.commentary.join("\n"));
+    setQuestions(active.questions.join("\n"));
+    setLocation(active.paginas);
+    setSourceId(active.fonte);
+    setEditing(true);
   };
-
-  const handleSaveEdit = () => {
-    if (!activeNote) return;
-    updateNote(activeNote.id, {
-      title: editTitle,
-      content: editContent
-    });
-    setIsEditing(false);
+  const save = () => {
+    const source = sources.find((s) => s.id === sourceId);
+    if (!source || !title.trim() || !location.trim()) return;
+    const data = {
+      title: title.trim(),
+      content: [claims.trim(), commentary.trim()].filter(Boolean).join("\n\n"),
+      claims: claims
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      commentary: commentary
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      questions: questions.split("\n").filter(Boolean),
+      fonte: source.id,
+      paginas: location,
+      tags: [source.topic],
+      citation: `${source.author}. ${source.title}, ${location}.`,
+    };
+    if (editing && active) updateNote(active.id, data);
+    else selectNote(addNote(data));
+    setCreating(false);
+    setEditing(false);
+    toast.success("Nota guardada com sua referência.");
   };
-
-  const handleConvertToCard = (note: Note) => {
+  const card = (n: Note) => {
     addCard({
-      frente: `O que diz a nota: "${note.title}"?`,
-      verso: note.content,
-      proxima: new Date().toISOString().slice(0, 10),
+      frente: `O que afirma a fonte na nota “${n.title}”?`,
+      verso: n.claims.join("\n") || n.content,
+      fonte: n.fonte,
+      noteId: n.id,
+      tags: n.tags,
+      proxima: localDay(),
       qualidade: 1,
       revisoes: 0,
-      fonte: note.fonte,
-      tags: note.tags
+      location: n.paginas,
     });
-    setTab("revisar");
+    toast.success("Cartão adicionado à revisão.");
   };
-
   return (
-    <div className="space-y-6">
-      {/* Header and Controls */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-display text-2xl font-semibold tracking-tight text-white">
-              Caderno de Conhecimento
-            </h2>
-            <p className="text-xs text-[#a1a1aa]">
-              {notes.length} notas sintetizadas com referências exatas
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsCreating(true)}
-            className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-black transition hover:bg-neutral-200 shadow-sm"
-          >
-            <Plus className="size-3.5" />
-            Nova Nota
-          </button>
+    <div className="notes-page">
+      <div className="page-heading">
+        <div>
+          <Overline>IDEIAS QUE MERECEM VOLTAR</Overline>
+          <h1>
+            Seu caderno<span className="title-period">.</span>
+          </h1>
+          <p>{notes.length} notas, com as fontes por perto.</p>
         </div>
-
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-[#71717a]" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por conceito, trecho ou tag..."
-            className="w-full rounded-2xl border border-[#27272a] bg-[#18181b] py-2.5 pl-10 pr-4 text-xs text-white placeholder-[#71717a] outline-none transition focus:border-white/30"
-          />
-        </div>
-
-        {/* Tag Filters */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          <button
-            type="button"
-            onClick={() => setSelectedTag("all")}
-            className={cn(
-              "rounded-full px-3 py-1 text-[11px] font-medium transition-all whitespace-nowrap",
-              selectedTag === "all"
-                ? "bg-white text-black font-semibold"
-                : "bg-[#18181b] border border-[#27272a] text-[#a1a1aa] hover:text-white"
-            )}
-          >
-            Todas ({notes.length})
-          </button>
-          {allTags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => setSelectedTag(tag)}
-              className={cn(
-                "rounded-full px-3 py-1 text-[11px] font-medium transition-all whitespace-nowrap",
-                selectedTag === tag
-                  ? "bg-white text-black font-semibold"
-                  : "bg-[#18181b] border border-[#27272a] text-[#a1a1aa] hover:text-white"
-              )}
-            >
-              #{tag}
-            </button>
-          ))}
-        </div>
+        <button className="button primary" onClick={reset}>
+          <Plus size={15} />
+          Nova nota
+        </button>
       </div>
-
-      {/* New Note Creator Modal / Drawer */}
-      <AnimatePresence>
-        {isCreating && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="rounded-3xl border border-[#27272a] bg-[#18181b] p-5 shadow-border overflow-hidden"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-[#27272a] mb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
-                <Sparkles className="size-3.5 text-amber-400" />
-                Criar Nova Nota de Estudo
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsCreating(false)}
-                className="text-[#71717a] hover:text-white"
-              >
-                <X className="size-4" />
-              </button>
+      <div className="study-modes">
+        <button onClick={() => setWorkbench("distill")}>
+          <Sparkles size={17} />
+          <span>
+            <strong>Destilar</strong>
+            <small>Uma leitura, ideias claras.</small>
+          </span>
+          <ArrowUpRight size={14} />
+        </button>
+        <button onClick={() => setWorkbench("socratic")}>
+          <MessageCircle size={17} />
+          <span>
+            <strong>Pensar junto</strong>
+            <small>Uma pergunta de cada vez.</small>
+          </span>
+          <ArrowUpRight size={14} />
+        </button>
+        <button onClick={() => setWorkbench("compare")}>
+          <GitCompareArrows size={17} />
+          <span>
+            <strong>Comparar</strong>
+            <small>Vozes e diferenças.</small>
+          </span>
+          <ArrowUpRight size={14} />
+        </button>
+      </div>
+      {!notes.length ? (
+        <Empty
+          title="Uma ideia de cada vez."
+          text="As notas que você guardar na leitura aparecem aqui."
+          action={
+            <button className="button" onClick={reset}>
+              Criar primeira nota
+            </button>
+          }
+        />
+      ) : (
+        <div className="notes-layout">
+          <aside className="notes-index">
+            <label className="notes-search">
+              <Search size={14} />
+              <input
+                aria-label="Buscar notas"
+                placeholder="Buscar uma ideia…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <div className="notes-index-list">
+              {filtered.map((n) => (
+                <button
+                  key={n.id}
+                  className={active?.id === n.id ? "active" : ""}
+                  onClick={() => selectNote(n.id)}
+                >
+                  <small>
+                    {sources.find((s) => s.id === n.fonte)?.author ?? "Fonte"} ·{" "}
+                    {n.paginas}
+                  </small>
+                  <strong>{n.title}</strong>
+                  <span>{n.tags[0]}</span>
+                </button>
+              ))}
+              {!filtered.length && (
+                <p className="muted">Nenhuma nota nesta busca.</p>
+              )}
             </div>
-
-            <form onSubmit={handleCreateNote} className="space-y-3">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-[#71717a] block mb-1">
-                  Título da Nota
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="Ex: Lei de Amdahl aplicada a clusters distribuídos"
-                  className="w-full rounded-xl border border-[#27272a] bg-[#09090b] px-3 py-2 text-xs text-white placeholder-[#71717a] outline-none focus:border-white/40"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-[#71717a] block mb-1">
-                  Conteúdo / Síntese
-                </label>
-                <textarea
-                  rows={3}
-                  value={newContent}
-                  onChange={(e) => setNewContent(e.target.value)}
-                  placeholder="Escreva sua síntese com suas próprias palavras..."
-                  className="w-full rounded-xl border border-[#27272a] bg-[#09090b] px-3 py-2 text-xs text-white placeholder-[#71717a] outline-none focus:border-white/40 resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
+          </aside>
+          {active && (
+            <article className="canonical-note">
+              <div className="note-actions">
+                <Overline>NOTA CANÔNICA</Overline>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[#71717a] block mb-1">
-                    Tag
-                  </label>
-                  <input
-                    type="text"
-                    value={newTag}
-                    onChange={(e) => setNewTag(e.target.value)}
-                    className="w-full rounded-xl border border-[#27272a] bg-[#09090b] px-2.5 py-1.5 text-xs text-white outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[#71717a] block mb-1">
-                    Fonte
-                  </label>
-                  <select
-                    value={newSource}
-                    onChange={(e) => setNewSource(e.target.value)}
-                    className="w-full rounded-xl border border-[#27272a] bg-[#09090b] px-2.5 py-1.5 text-xs text-white outline-none cursor-pointer"
+                  <button
+                    className="icon-button"
+                    aria-label="Editar nota"
+                    onClick={edit}
                   >
-                    {Object.entries(FONTE_LABEL).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label.slice(0, 18)}...
-                      </option>
+                    <Edit3 size={15} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label="Remover nota"
+                    onClick={() => {
+                      if (confirm("Remover esta nota?")) deleteNote(active.id);
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+              <h2>{active.title}</h2>
+              <div className="note-tags">
+                {active.tags.map((t) => (
+                  <span key={t}>{t}</span>
+                ))}
+              </div>
+              {active.quote && <blockquote>{active.quote}</blockquote>}
+              {active.claims.length > 0 && (
+                <section>
+                  <Overline>O QUE A FONTE AFIRMA</Overline>
+                  <ul>
+                    {active.claims.map((c, i) => (
+                      <li key={i}>{c}</li>
                     ))}
-                  </select>
+                  </ul>
+                </section>
+              )}
+              {active.commentary.length > 0 && (
+                <section>
+                  <Overline>COMENTÁRIO E LIMITES</Overline>
+                  {active.commentary.map((c, i) => (
+                    <p key={i}>{c}</p>
+                  ))}
+                </section>
+              )}
+              {!active.claims.length && !active.commentary.length && (
+                <p>{active.content}</p>
+              )}
+              {active.questions.length > 0 && (
+                <section className="open-questions">
+                  <Overline>O QUE FICOU EM ABERTO</Overline>
+                  {active.questions.map((q, i) => (
+                    <p key={i}>{q}</p>
+                  ))}
+                </section>
+              )}
+              <footer>
+                <Overline>REFERÊNCIA</Overline>
+                <p>
+                  {active.citation ||
+                    `${sources.find((s) => s.id === active.fonte)?.author}. ${sources.find((s) => s.id === active.fonte)?.title}, ${active.paginas}.`}
+                </p>
+                <div className="button-row">
+                  <button
+                    className="text-button"
+                    onClick={() => {
+                      setActiveSourceId(active.fonte);
+                      setTab("estudar");
+                      if (active.paragraphId)
+                        setTimeout(
+                          () =>
+                            document
+                              .querySelector(
+                                `[data-paragraph="${active.paragraphId}"]`,
+                              )
+                              ?.scrollIntoView({ block: "center" }),
+                          80,
+                        );
+                    }}
+                  >
+                    Voltar à fonte
+                    <ArrowUpRight size={14} />
+                  </button>
+                  <button
+                    className="button subtle"
+                    onClick={() => card(active)}
+                  >
+                    <NotebookPen size={14} />
+                    Criar cartão
+                  </button>
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[#71717a] block mb-1">
-                    Página
-                  </label>
-                  <input
-                    type="text"
-                    value={newPages}
-                    onChange={(e) => setNewPages(e.target.value)}
-                    className="w-full rounded-xl border border-[#27272a] bg-[#09090b] px-2.5 py-1.5 text-xs text-white outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreating(false)}
-                  className="rounded-xl border border-[#27272a] px-3 py-1.5 text-xs text-[#a1a1aa] hover:text-white"
+              </footer>
+            </article>
+          )}
+        </div>
+      )}
+      {(creating || editing) && (
+        <Modal
+          title={editing ? "Editar nota" : "Uma nova ideia"}
+          close={() => {
+            setCreating(false);
+            setEditing(false);
+          }}
+        >
+          <div className="form-stack">
+            <label className="field">
+              Título
+              <input
+                autoFocus
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Uma ideia por nota"
+              />
+            </label>
+            <div className="field-row">
+              <label className="field">
+                Fonte
+                <select
+                  value={sourceId}
+                  onChange={(e) => setSourceId(e.target.value)}
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-white px-4 py-1.5 text-xs font-semibold text-black hover:bg-neutral-200"
-                >
-                  Salvar Nota
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Selected Note Inspector / Modal */}
-      <AnimatePresence>
-        {activeNote && (
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 15 }}
-            className="rounded-3xl border border-white/20 bg-[#18181b] p-5 shadow-border"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-[#27272a] mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#a1a1aa]">
-                  {FONTE_LABEL[activeNote.fonte] || activeNote.fonte} · {activeNote.paginas}
-                </span>
-                <span className="text-[10px] text-[#71717a]">· {activeNote.createdAt}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleConvertToCard(activeNote)}
-                  className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-white/20 transition"
-                  title="Converter nota em Flashcard"
-                >
-                  <Sparkles className="size-3 text-amber-400" />
-                  Gerar Card
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveSourceId(activeNote.fonte);
-                    setTab("estudar");
-                  }}
-                  className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-white/20 transition"
-                  title="Abrir no leitor"
-                >
-                  <BookOpen className="size-3" />
-                  Leitor
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteNote(activeNote.id)}
-                  className="rounded-xl p-1.5 text-[#71717a] hover:text-red-400 transition"
-                  title="Deletar nota"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => selectNote(null)}
-                  className="rounded-xl p-1.5 text-[#71717a] hover:text-white transition"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            </div>
-
-            {isEditing ? (
-              <div className="space-y-3">
+                  {sources.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Página, capítulo ou trecho
                 <input
-                  type="text"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full rounded-xl border border-[#27272a] bg-[#09090b] px-3 py-2 text-sm font-semibold text-white outline-none"
+                  required
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Ex.: p. 12 ou § 3"
                 />
+              </label>
+            </div>
+            <label className="field">
+              Afirmações da fonte
+              <textarea
+                rows={4}
+                value={claims}
+                onChange={(e) => setClaims(e.target.value)}
+                placeholder="Uma afirmação por linha"
+              />
+            </label>
+            <label className="field">
+              Seu comentário
+              <textarea
+                rows={3}
+                value={commentary}
+                onChange={(e) => setCommentary(e.target.value)}
+                placeholder="Interpretação, limites ou conexões"
+              />
+            </label>
+            <label className="field">
+              Perguntas em aberto
+              <textarea
+                rows={2}
+                value={questions}
+                onChange={(e) => setQuestions(e.target.value)}
+              />
+            </label>
+            <button
+              className="button primary"
+              onClick={save}
+              disabled={
+                !title.trim() ||
+                !location.trim() ||
+                !sourceId ||
+                (!claims.trim() && !commentary.trim())
+              }
+            >
+              <Check size={15} />
+              Guardar nota
+            </button>
+          </div>
+        </Modal>
+      )}
+      {workbench && (
+        <StudyWorkbench mode={workbench} close={() => setWorkbench(null)} />
+      )}
+    </div>
+  );
+}
+function StudyWorkbench({
+  mode,
+  close,
+}: {
+  mode: "distill" | "socratic" | "compare";
+  close: () => void;
+}) {
+  const { sources, notes, addNote, addCard, addRelation, selectNote, setTab } =
+    useVault((s) => s);
+  const [sourceId, setSourceId] = useState(sources[0]?.id ?? "");
+  const [location, setLocation] = useState("");
+  const [text, setText] = useState("");
+  const [second, setSecond] = useState(notes[1]?.id ?? "");
+  const [first, setFirst] = useState(notes[0]?.id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<AssistResult | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [learner, setLearner] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
+  const source = sources.find((s) => s.id === sourceId);
+  const available = notes.filter((n) => n.fonte === sourceId);
+  const run = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      let context = "";
+      let prompt = "";
+      let label = "";
+      if (mode === "distill") {
+        context = text;
+        prompt =
+          "Destile este recorte em uma nota canônica e 3 cartões de revisão. Separe afirmações da fonte e comentários, sem inventar páginas.";
+        label = `${source?.author}. ${source?.title}, ${location}.`;
+      } else if (mode === "compare") {
+        const a = notes.find((n) => n.id === first),
+          b = notes.find((n) => n.id === second);
+        context = JSON.stringify([a, b]);
+        prompt =
+          "Compare estas duas notas, preservando a atribuição de cada ideia e as citações. Registre convergências, divergências e limites.";
+        label = "Notas canônicas existentes";
+      } else {
+        context = JSON.stringify(available);
+        prompt = history.length
+          ? `Conversa anterior:\n${history.join("\n")}\nResposta do estudante: ${learner}\nDê feedback com base nas notas e faça apenas uma nova pergunta.`
+          : "Faça uma única pergunta curta sobre estas notas. Não apresente a resposta ainda.";
+        label = `Notas existentes de ${source?.title}`;
+      }
+      const output = await assist(mode, prompt, context, label);
+      setResult(output);
+      setSaved(false);
+      if (mode === "socratic") {
+        setHistory((h) => [
+          ...h,
+          ...(learner ? [`Estudante: ${learner}`] : []),
+          `Tutor: ${output.answer}`,
+        ]);
+        setLearner("");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "A IA está indisponível.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = () => {
+    if (!result || !source) return;
+    const a = notes.find((n) => n.id === first),
+      b = notes.find((n) => n.id === second);
+    const target = addNote({
+      title:
+        result.title ??
+        (mode === "compare" ? "Comparação de fontes" : "Ideia destilada"),
+      content: result.answer,
+      claims: result.claims ?? [],
+      commentary: result.commentary ?? [result.answer],
+      questions: result.questions ?? [],
+      citation:
+        mode === "compare"
+          ? `${a?.citation}\n${b?.citation}`
+          : `${source.author}. ${source.title}, ${location}.`,
+      fonte: mode === "compare" ? (a?.fonte ?? source.id) : source.id,
+      paginas: mode === "compare" ? `${a?.paginas} / ${b?.paginas}` : location,
+      tags: [mode === "compare" ? "Comparação" : source.topic],
+    });
+    if (mode === "distill")
+      for (const c of result.cards ?? [])
+        addCard({
+          frente: c.question,
+          verso: c.answer,
+          noteId: target,
+          fonte: source.id,
+          tags: [source.topic],
+          location,
+          proxima: localDay(),
+          qualidade: 1,
+          revisoes: 0,
+        });
+    if (mode === "compare" && a && b)
+      addRelation({
+        from: a.id,
+        to: b.id,
+        kind: "relaciona",
+        reason: result.answer,
+        citation: `${a.citation}\n${b.citation}`,
+      });
+    selectNote(target);
+    setSaved(true);
+    toast.success("Estudo guardado no caderno.");
+  };
+  return (
+    <Modal
+      title={
+        mode === "distill"
+          ? "Destilar uma leitura"
+          : mode === "socratic"
+            ? "Pensar junto"
+            : "Comparar fontes"
+      }
+      close={close}
+      wide
+    >
+      <div className="form-stack">
+        {mode === "compare" ? (
+          <div className="field-row">
+            <label className="field">
+              Primeira nota
+              <select value={first} onChange={(e) => setFirst(e.target.value)}>
+                {notes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Segunda nota
+              <select
+                value={second}
+                onChange={(e) => setSecond(e.target.value)}
+              >
+                {notes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : (
+          <label className="field">
+            Fonte
+            <select
+              value={sourceId}
+              disabled={busy}
+              onChange={(e) => {
+                setSourceId(e.target.value);
+                setHistory([]);
+                setResult(null);
+              }}
+            >
+              {sources.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {mode === "distill" && (
+          <>
+            <label className="field">
+              Localização
+              <input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Página ou capítulo do recorte"
+              />
+            </label>
+            <label className="field">
+              Recorte da fonte
+              <textarea
+                rows={8}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Trabalhe com uma seção de cada vez."
+              />
+            </label>
+          </>
+        )}
+        {mode === "socratic" && (
+          <>
+            <p className="form-intro">
+              O tutor usa as notas que já existem. Responda antes de pedir a
+              próxima pergunta.
+            </p>
+            {!available.length && (
+              <p className="inline-error">
+                Esta fonte ainda não tem notas. Destile um recorte primeiro.
+              </p>
+            )}
+            {result && (
+              <div className="workbench-answer">
+                <p>{result.answer}</p>
+              </div>
+            )}
+            {history.length > 0 && (
+              <label className="field">
+                Sua resposta
                 <textarea
                   rows={4}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="w-full rounded-xl border border-[#27272a] bg-[#09090b] px-3 py-2 text-xs text-white outline-none resize-none leading-relaxed"
+                  value={learner}
+                  onChange={(e) => setLearner(e.target.value)}
+                  placeholder="Escreva o que você entendeu…"
                 />
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(false)}
-                    className="rounded-xl border border-[#27272a] px-3 py-1 text-xs text-[#a1a1aa]"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveEdit}
-                    className="rounded-xl bg-white px-3 py-1 text-xs font-semibold text-black"
-                  >
-                    Salvar
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <h3 className="font-display text-xl font-semibold text-white">
-                    {activeNote.title}
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => handleStartEdit(activeNote)}
-                    className="text-[#71717a] hover:text-white transition p-1"
-                  >
-                    <Edit3 className="size-3.5" />
-                  </button>
-                </div>
-
-                <p className="text-xs text-[#d4d4d8] leading-relaxed whitespace-pre-wrap mb-4">
-                  {activeNote.content}
-                </p>
-
-                {activeNote.highlights && activeNote.highlights.length > 0 && (
-                  <div className="rounded-2xl bg-[#09090b] p-3 border border-white/5 space-y-1.5 mb-3">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#71717a]">
-                      Trechos Destacados no Texto
-                    </span>
-                    {activeNote.highlights.map((h, i) => (
-                      <p key={i} className="font-serif italic text-xs text-[#a1a1aa] border-l-2 border-amber-400/40 pl-2">
-                        "{h}"
-                      </p>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {activeNote.tags.map((t) => (
-                    <span
-                      key={t}
-                      className="rounded-full bg-white/5 border border-white/10 px-2.5 py-0.5 text-[10px] font-mono text-[#a1a1aa]"
-                    >
-                      #{t}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              </label>
             )}
-          </motion.div>
+          </>
         )}
-      </AnimatePresence>
-
-      {/* Reactive Motion Cards List (Nutlope Tactile Dynamic) */}
-      <ul className="space-y-3">
-        {filteredNotes.length === 0 ? (
-          <li className="rounded-2xl border border-dashed border-[#27272a] p-8 text-center text-xs text-[#71717a]">
-            Nenhuma nota encontrada para a busca atual.
-          </li>
-        ) : (
-          filteredNotes.map((n) => (
-            <motion.li
-              key={n.id}
-              whileHover={{ scale: 1.015, x: 4 }}
-              whileTap={{ scale: 0.985 }}
-              transition={{ type: "spring", bounce: 0.3 }}
-            >
-              <button
-                type="button"
-                onClick={() => selectNote(n.id)}
-                className={cn(
-                  "flex min-h-20 w-full flex-col items-start rounded-2xl border border-[#27272a] bg-[#18181b] p-4 text-left transition-all shadow-sm",
-                  selectedNoteId === n.id
-                    ? "ring-2 ring-white bg-[#27272a]"
-                    : "hover:bg-[#27272a]/70 hover:border-white/20"
-                )}
-              >
-                <div className="flex w-full items-center justify-between mb-1">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#a1a1aa]">
-                    {FONTE_LABEL[n.fonte] || n.fonte} · {n.paginas}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {n.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="rounded-md bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-[#71717a]"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <span className="font-display text-lg font-medium leading-tight text-white mb-1.5">
-                  {n.title}
-                </span>
-
-                <p className="line-clamp-2 text-xs text-[#a1a1aa] leading-relaxed">
-                  {n.content}
-                </p>
-              </button>
-            </motion.li>
-          ))
+        <button
+          className="button primary"
+          disabled={
+            busy ||
+            (mode === "distill" && (!location.trim() || !text.trim())) ||
+            (mode === "compare" && (!first || !second || first === second)) ||
+            (mode === "socratic" &&
+              (!available.length || (history.length > 0 && !learner.trim())))
+          }
+          onClick={() => void run()}
+        >
+          <Sparkles size={15} />
+          {busy
+            ? "Pensando…"
+            : mode === "socratic"
+              ? history.length
+                ? "Enviar resposta"
+                : "Começar com uma pergunta"
+              : mode === "distill"
+                ? "Destilar recorte"
+                : "Comparar as notas"}
+        </button>
+        {error && (
+          <p className="inline-error" role="alert">
+            {error}
+          </p>
         )}
-      </ul>
-    </div>
+        {result && mode !== "socratic" && (
+          <div className="workbench-answer">
+            <Overline>LEITURA ORGANIZADA</Overline>
+            <h3>{result.title}</h3>
+            <p>{result.answer}</p>
+            {result.claims?.length && (
+              <ul>
+                {result.claims.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            )}
+            {result.commentary?.map((c, i) => (
+              <p key={i}>{c}</p>
+            ))}
+            <button className="button" disabled={saved} onClick={save}>
+              <Check size={15} />
+              {saved ? "Guardado" : "Guardar nota e relações"}
+            </button>
+          </div>
+        )}
+        {mode === "socratic" && history.length > 0 && (
+          <button
+            className="text-button"
+            disabled={saved}
+            onClick={() => {
+              addNote({
+                title: `Sessão de estudo: ${source?.title}`,
+                content: history.join("\n\n"),
+                fonte: sourceId,
+                paginas: "Sessão sobre notas existentes",
+                tags: ["Estudo socrático"],
+                claims: [],
+                commentary: history,
+                questions: [],
+                citation: available.map((n) => n.citation).join("\n"),
+              });
+              setSaved(true);
+              toast.success("Sessão e respostas guardadas.");
+            }}
+          >
+            Guardar esta sessão
+            <Check size={13} />
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }
