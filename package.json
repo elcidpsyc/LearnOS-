@@ -17,6 +17,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@vercel/blob": "2.8.1",
     "@vercel/functions": "3.9.11",
+    "@vercel/oidc": "3.8.10",
     "@vitejs/plugin-react": "^6.1.1",
     "ai": "7.0.138",
     "framer-motion": "^14.1.0",

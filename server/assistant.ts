@@ -1,13 +1,22 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
+import { getVercelOidcTokenSync } from "@vercel/oidc";
 import { HttpError } from "./storage.js";
 export const MODELS = {
   openai: "openai/gpt-5.4-mini",
   anthropic: "anthropic/claude-sonnet-5.5",
   grok: "spacexai/grok-4.7",
 } as const;
-export const aiReady = () =>
-  Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+export function aiReady() {
+  if (process.env.AI_GATEWAY_API_KEY) return true;
+  try {
+    // Production functions receive OIDC through the request context, while
+    // linked local development can use VERCEL_OIDC_TOKEN.
+    return Boolean(getVercelOidcTokenSync());
+  } catch {
+    return false;
+  }
+}
 const inputSchema = z.object({
   mode: z.enum([
     "ask",
