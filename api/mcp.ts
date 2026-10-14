@@ -5,11 +5,67 @@ import {
   json,
   failure,
   HttpError,
+  limit,
+  hash,
 } from "../server/storage.js";
 import { article } from "../server/article.js";
 import { sourceDraft } from "../src/lib/study/source.js";
-export const maxDuration = 30;
+export const maxDuration = 60;
 const tools = [
+  {
+    name: "search_library",
+    description:
+      "Busca títulos, autores, temas, notas, destaques e conversas da biblioteca privada.",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string" } },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_topics",
+    description: "Lista temas e pastas da biblioteca com contadores reais.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "save_text",
+    description:
+      "Salva texto ou transcrição fornecidos pelo agente, com título, autor, tema e pasta.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        text: { type: "string" },
+        author: { type: "string" },
+        topic: { type: "string" },
+        folder: { type: "string" },
+        agentName: { type: "string" },
+      },
+      required: ["title", "text"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "save_articles",
+    description:
+      "Importa até cinco links públicos e informa o resultado individual de cada link.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        urls: { type: "array", items: { type: "string" }, maxItems: 5 },
+        topic: { type: "string" },
+        folder: { type: "string" },
+        agentName: { type: "string" },
+      },
+      required: ["urls"],
+      additionalProperties: false,
+    },
+  },
   {
     name: "list_sources",
     description:
@@ -102,7 +158,103 @@ export async function POST(req: Request) {
       args = rpc.params?.arguments ?? {},
       data = auth.data;
     let output: unknown;
-    if (name === "list_sources")
+    if (name === "search_library") {
+      if (
+        typeof args.query !== "string" ||
+        !args.query.trim() ||
+        args.query.length > 500
+      )
+        throw new HttpError(
+          400,
+          "Forneça um termo de busca de até 500 caracteres.",
+        );
+      const query = args.query.toLocaleLowerCase();
+      output = {
+        sources: data.sources
+          .filter((s) =>
+            `${s.title} ${s.author} ${s.topic} ${s.tags?.join(" ") ?? ""}`
+              .toLocaleLowerCase()
+              .includes(query),
+          )
+          .slice(0, 50),
+        notes: data.notes
+          .filter((n) =>
+            `${n.title} ${n.content}`.toLocaleLowerCase().includes(query),
+          )
+          .slice(0, 50),
+        annotations: data.marginNotes
+          .filter((m) =>
+            `${m.quote ?? ""} ${m.content} ${m.conversation?.map((t) => t.content).join(" ") ?? ""}`
+              .toLocaleLowerCase()
+              .includes(query),
+          )
+          .slice(0, 50),
+      };
+    } else if (name === "list_topics") {
+      output = {
+        topics: [...new Set(data.sources.map((s) => s.topic))].map((topic) => ({
+          topic,
+          count: data.sources.filter((s) => s.topic === topic).length,
+        })),
+        folders: [
+          ...new Set(data.sources.map((s) => s.folder).filter(Boolean)),
+        ],
+      };
+    } else if (name === "save_articles") {
+      if (
+        !Array.isArray(args.urls) ||
+        !args.urls.length ||
+        args.urls.length > 5 ||
+        !args.urls.every((url: unknown) => typeof url === "string")
+      )
+        throw new HttpError(400, "Forneça de um a cinco links.");
+      const results = [];
+      for (const url of args.urls) {
+        try {
+          await limit(`import:${hash(auth.token)}`, 20, 3600);
+          const imported = await article(url);
+          const existing = data.sources.find((s) => s.url === imported.url);
+          if (existing) {
+            results.push({ url, id: existing.id, alreadyExists: true });
+            continue;
+          }
+          const stamp = new Date().toISOString();
+          const source = {
+            ...sourceDraft(
+              imported.title,
+              imported.text,
+              imported.author,
+              typeof args.topic === "string" ? args.topic : "Sem categoria",
+            ),
+            paragraphs: imported.paragraphs,
+            coverUrl: imported.coverUrl,
+            url: imported.url,
+            folder: typeof args.folder === "string" ? args.folder : undefined,
+            id: crypto.randomUUID(),
+            origin: "agent" as const,
+            agentName:
+              typeof args.agentName === "string"
+                ? args.agentName
+                : "Agente conectado",
+            createdAt: stamp,
+            updatedAt: stamp,
+          };
+          data.sources.unshift(source);
+          data.updatedAt = stamp;
+          results.push({ url, id: source.id, title: source.title });
+        } catch (e) {
+          results.push({
+            url,
+            error:
+              e instanceof HttpError
+                ? e.message
+                : "Não foi possível importar este link.",
+          });
+        }
+      }
+      await writeWorkspace(auth.token, data, auth.etag);
+      output = results;
+    } else if (name === "list_sources")
       output = data.sources.map(
         ({ id, title, author, topic, url, progress, origin }) => ({
           id,
@@ -122,7 +274,8 @@ export async function POST(req: Request) {
       output = data.notes.filter(
         (n) => !args.sourceId || n.fonte === args.sourceId,
       );
-    else if (name === "add_source") {
+    else if (name === "add_source" || name === "save_text") {
+      await limit(`import:${hash(auth.token)}`, 20, 3600);
       let imported =
         typeof args.url === "string"
           ? await article(args.url)
@@ -159,6 +312,10 @@ export async function POST(req: Request) {
           origin: "agent" as const,
           agentName: args.agentName ?? "Agente conectado",
           url: imported.url,
+          ...("paragraphs" in imported
+            ? { paragraphs: imported.paragraphs, coverUrl: imported.coverUrl }
+            : {}),
+          folder: typeof args.folder === "string" ? args.folder : undefined,
           createdAt: stamp,
           updatedAt: stamp,
         };

@@ -25,6 +25,8 @@ export async function importLink(
     origin: "link",
     format: "Artigo",
     publishedYear: data.year ?? "",
+    ...(Array.isArray(data.paragraphs) ? { paragraphs: data.paragraphs } : {}),
+    coverUrl: data.coverUrl,
   };
 }
 export async function readFileText(

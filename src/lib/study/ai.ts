@@ -1,9 +1,11 @@
 import { snapshot } from "../vault/store";
+import type { AnswerReference, ConversationTurn, Source } from "../vault/types";
 export type AiStatus = {
   available: boolean;
   storage: boolean;
   models: { id: string; label: string }[];
   message?: string;
+  webSearch?: boolean;
 };
 export type AssistMode =
   | "ask"
@@ -13,7 +15,12 @@ export type AssistMode =
   | "socratic"
   | "compare"
   | "flashcard"
-  | "summary";
+  | "summary"
+  | "define"
+  | "simplify"
+  | "factcheck"
+  | "overview"
+  | "classify";
 export type AssistResult = {
   answer: string;
   title?: string;
@@ -23,6 +30,9 @@ export type AssistResult = {
   cards?: { question: string; answer: string }[];
   summary?: string;
   model?: string;
+  references?: AnswerReference[];
+  overview?: Omit<NonNullable<Source["overview"]>, "generatedAt" | "model">;
+  classification?: { topic: string; tags: string[] };
 };
 export async function getAiStatus(): Promise<AiStatus> {
   try {
@@ -44,6 +54,12 @@ export async function assist(
   prompt: string,
   context: string,
   sourceLabel: string,
+  options: {
+    history?: ConversationTurn[];
+    web?: boolean;
+    signal?: AbortSignal;
+    depth?: "quick" | "deep";
+  } = {},
 ): Promise<AssistResult> {
   const data = snapshot();
   const r = await fetch("/api/assist", {
@@ -60,7 +76,17 @@ export async function assist(
       context,
       sourceLabel,
       model: data.settings.model,
+      depth: options.depth ?? data.settings.answerDepth,
+      length: data.settings.answerLength,
+      web: options.web ?? false,
+      history: (options.history ?? [])
+        .slice(-12)
+        .map(({ role, content }) => ({
+          role,
+          content: content.slice(0, 12000),
+        })),
     }),
+    signal: options.signal,
   });
   const result = await r
     .json()

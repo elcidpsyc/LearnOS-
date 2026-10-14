@@ -2,8 +2,9 @@ import {
   useState,
   useEffect,
   useRef,
+  useCallback,
+  useMemo,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import {
   ChevronDown,
@@ -14,276 +15,535 @@ import {
   Minimize2,
   Headphones,
   VolumeX,
-  BookOpen,
   ArrowRight,
-  Languages,
-  Sparkles,
-  MessageCircle,
-  Trash2,
   Plus,
-  Check,
-  RotateCcw,
+  Keyboard,
+  Pause,
+  Play,
+  Map,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/store";
-import type { Paragraph, MarginNote, Source } from "@/lib/vault/types";
+import type { Source, Paragraph } from "@/lib/vault/types";
 import { assist } from "@/lib/study/ai";
-import { getFile, download } from "@/lib/vault/files";
+import {
+  captureReadingSelection,
+  buildHighlightRuns,
+  notebookEntries,
+  readingContext,
+  safeUrl,
+} from "@/lib/study/reader";
+import { getFile } from "@/lib/vault/files";
 import { ReaderSettings } from "./reader-settings";
 import { TranslatorPopup } from "./translator-popup";
 import { AddSourceModal } from "./add-source-modal";
 import { Empty, Modal, Overline } from "./ui";
-function AnnotatedText({
-  paragraph,
-  marks,
-}: {
-  paragraph: Paragraph;
-  marks: MarginNote[];
-}) {
-  const highlights = marks
-    .filter((m) => m.type === "highlight" && m.quote)
-    .map((m) => ({
-      mark: m,
-      start: m.start ?? paragraph.text.indexOf(m.quote!),
-      end: m.end ?? paragraph.text.indexOf(m.quote!) + m.quote!.length,
-    }))
-    .filter((m) => m.start >= 0)
-    .sort((a, b) => a.start - b.start);
-  const parts: ReactNode[] = [];
-  let cursor = 0;
-  for (const h of highlights) {
-    if (h.start < cursor) continue;
-    parts.push(paragraph.text.slice(cursor, h.start));
-    parts.push(
-      <mark
-        key={h.mark.id}
-        style={{ background: h.mark.color ?? "var(--highlight)" }}
-      >
-        {paragraph.text.slice(h.start, h.end)}
-      </mark>,
-    );
-    cursor = h.end;
-  }
-  parts.push(paragraph.text.slice(cursor));
-  return <>{parts}</>;
-}
+import {
+  AnswerText,
+  MarginConversation,
+  ReaderMinimap,
+  ReaderNotebook,
+  Thinking,
+} from "./reader-support";
+
 export function StudyTab() {
+  const { sources, activeSourceId, setTab } = useVault((s) => s);
+  const source = sources.find((s) => s.id === activeSourceId) ?? sources[0];
+  return source ? (
+    <Reader key={source.id} source={source} />
+  ) : (
+    <Empty
+      title="Sua próxima leitura começa aqui."
+      text="Adicione um material para abrir o leitor."
+      action={
+        <button className="button" onClick={() => setTab("fontes")}>
+          Abrir biblioteca
+        </button>
+      }
+    />
+  );
+}
+function Reader({ source }: { source: Source }) {
   const {
     sources,
-    activeSourceId,
-    setActiveSourceId,
     notes,
     marginNotes,
     settings,
     saveSettings,
     setTab,
-    setSelection,
+    setActiveSourceId,
     selection,
+    setSelection,
     updateSource,
-    deleteMarginNote,
-    addNote,
-    addCard,
     addMarginNote,
     selectNote,
+    readerNavigation,
   } = useVault((s) => s);
-  const source = sources.find((s) => s.id === activeSourceId) ?? sources[0];
   const [preferences, setPreferences] = useState(false);
   const [notebook, setNotebook] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [keys, setKeys] = useState(false);
   const [brief, setBrief] = useState(false);
   const [question, setQuestion] = useState("");
-  const [depth, setDepth] = useState<"quick" | "deep">("quick");
   const [busy, setBusy] = useState(false);
-  const [answer, setAnswer] = useState("");
+  const [briefBusy, setBriefBusy] = useState(false);
   const [error, setError] = useState("");
+  const [briefError, setBriefError] = useState("");
+  const [thinking, setThinking] = useState<number | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [adding, setAdding] = useState(false);
   const [fileUrl, setFileUrl] = useState("");
-  const observed = useRef<number>(0);
-  const remembered = useRef("");
+  const [current, setCurrent] = useState(
+    source.lastParagraph ?? source.paragraphs[0]?.id ?? 0,
+  );
+  const article = useRef<HTMLElement>(null);
+  const questionInput = useRef<HTMLInputElement>(null);
+  const requests = useRef(new Set<AbortController>());
+  const speechSession = useRef(0);
+  const sourceMarks = useMemo(
+    () => marginNotes.filter((m) => m.sourceId === source.id),
+    [marginNotes, source.id],
+  );
+  const highlighted = useMemo(
+    () => buildHighlightRuns(source, sourceMarks),
+    [source.paragraphs, sourceMarks],
+  );
+  const sourceNotes = notes.filter((n) => n.fonte === source.id);
+  const goTo = useCallback((paragraphId: number) => {
+    setNotebook(false);
+    setMapOpen(false);
+    setCurrent(paragraphId);
+    requestAnimationFrame(() =>
+      document.getElementById(`paragraph-${paragraphId}`)?.scrollIntoView({
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+        block: "center",
+      }),
+    );
+  }, []);
   useEffect(() => {
-    setAnswer("");
-    setQuestion("");
-    setBrief(false);
-    setFileUrl("");
-    remembered.current = "";
-    observed.current = 0;
-    window.speechSynthesis?.cancel();
-    setSpeaking(false);
-    let url = "";
-    let cancelled = false;
-    if (source?.fileId)
+    if (readerNavigation?.sourceId === source.id) {
+      if (readerNavigation.paragraphId) goTo(readerNavigation.paragraphId);
+      else {
+        setNotebook(true);
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
+    }
+  }, [readerNavigation, source.id, goTo]);
+  useEffect(() => {
+    let url = "",
+      disposed = false;
+    if (source.fileId)
       void getFile(source.fileId).then((file) => {
-        if (!cancelled && file) {
+        if (!disposed && file) {
           url = URL.createObjectURL(file);
           setFileUrl(url);
         }
       });
+    if (!readerNavigation && source.lastParagraph)
+      requestAnimationFrame(() => goTo(source.lastParagraph!));
     return () => {
-      cancelled = true;
+      disposed = true;
       if (url) URL.revokeObjectURL(url);
+      speechSession.current++;
       window.speechSynthesis?.cancel();
+      requests.current.forEach((r) => r.abort());
     };
-  }, [source?.id]);
+  }, [source.id, goTo]);
   useEffect(() => {
-    if (!source?.paragraphs.length) return;
+    if (!article.current) return;
+    let timer: ReturnType<typeof setTimeout>;
+    let latest = source.lastParagraph ?? 0;
+    let progress = source.progress;
     const observer = new IntersectionObserver(
       (entries) => {
-        for (const entry of entries)
-          if (entry.isIntersecting) {
-            const n = Number((entry.target as HTMLElement).dataset.paragraph);
-            const index = source.paragraphs.findIndex((p) => p.id === n);
-            const progress = Math.round(
-              ((index + 1) / source.paragraphs.length) * 100,
-            );
-            if (progress > observed.current) {
-              observed.current = progress;
-              updateSource(source.id, {
-                progress: Math.max(source.progress, progress),
-                lastParagraph: n,
-                lastReadAt: new Date().toISOString(),
-              });
-            }
-          }
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort(
+            (a, b) =>
+              Math.abs(a.boundingClientRect.top - 150) -
+              Math.abs(b.boundingClientRect.top - 150),
+          );
+        if (!visible.length) return;
+        const paragraphId = Number(
+          (visible[0].target as HTMLElement).dataset.paragraph,
+        );
+        if (latest === paragraphId) return;
+        latest = paragraphId;
+        setCurrent(paragraphId);
+        const index = source.paragraphs.findIndex((p) => p.id === paragraphId);
+        progress = Math.max(
+          progress,
+          Math.round(((index + 1) / source.paragraphs.length) * 100),
+        );
+        clearTimeout(timer);
+        timer = setTimeout(
+          () =>
+            updateSource(source.id, {
+              lastParagraph: latest,
+              progress,
+              lastReadAt: new Date().toISOString(),
+            }),
+          450,
+        );
       },
-      { rootMargin: "-20% 0px -25% 0px", threshold: 0.2 },
+      { rootMargin: "-100px 0px -45% 0px", threshold: 0.15 },
     );
-    document
+    article.current
       .querySelectorAll("[data-paragraph]")
-      .forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [source?.id, source?.paragraphs.length, updateSource]);
-  if (!source)
-    return (
-      <Empty
-        title="Sua próxima leitura começa aqui."
-        text="Adicione uma fonte para abrir o leitor."
-        action={
-          <button className="button" onClick={() => setTab("fontes")}>
-            Abrir biblioteca
-          </button>
+      .forEach((p) => observer.observe(p));
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      if (latest)
+        updateSource(source.id, {
+          lastParagraph: latest,
+          progress,
+          lastReadAt: new Date().toISOString(),
+        });
+    };
+  }, [source.id, source.paragraphs.length, updateSource]);
+  useEffect(() => {
+    const keyboard = (e: KeyboardEvent) => {
+      if (
+        e.defaultPrevented ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        (e.target as Element)?.closest(
+          "input,textarea,select,[contenteditable],dialog",
+        ) ||
+        selection
+      )
+        return;
+      const index = source.paragraphs.findIndex((p) => p.id === current);
+      switch (e.key.toLowerCase()) {
+        case "/":
+          e.preventDefault();
+          questionInput.current?.focus();
+          break;
+        case "j":
+        case "k": {
+          e.preventDefault();
+          const p =
+            source.paragraphs[
+              Math.max(
+                0,
+                Math.min(
+                  source.paragraphs.length - 1,
+                  index + (e.key.toLowerCase() === "j" ? 1 : -1),
+                ),
+              )
+            ];
+          if (p) goTo(p.id);
+          break;
         }
-      />
-    );
-  const sourceNotes = notes.filter((n) => n.fonte === source.id);
-  const sourceMarks = marginNotes.filter((n) => n.sourceId === source.id);
+        case "n":
+          e.preventDefault();
+          setNotebook((v) => !v);
+          break;
+        case "f":
+          e.preventDefault();
+          saveSettings({ focus: !settings.focus });
+          break;
+        case "b":
+          e.preventDefault();
+          setBrief((v) => !v);
+          break;
+        case "?":
+          e.preventDefault();
+          setKeys(true);
+          break;
+        case "enter": {
+          const p = source.paragraphs[index];
+          if (!p) break;
+          e.preventDefault();
+          setSelection({
+            sourceId: source.id,
+            paragraphId: p.id,
+            text: p.text,
+            start: 0,
+            end: p.text.length,
+            left: 80,
+            top: 110,
+            anchors: [
+              {
+                paragraphId: p.id,
+                start: 0,
+                end: p.text.length,
+                quote: p.text,
+              },
+            ],
+          });
+          break;
+        }
+        case "[":
+        case "]": {
+          e.preventDefault();
+          const ordered = [
+            ...new Set(
+              sourceMarks
+                .filter((m) => m.type !== "highlight" && m.paragraphId)
+                .map((m) => m.paragraphId),
+            ),
+          ].sort((a, b) => a - b);
+          const target =
+            e.key === "]"
+              ? (ordered.find((n) => n > current) ?? ordered[0])
+              : (ordered.filter((n) => n < current).at(-1) ?? ordered.at(-1));
+          if (target) goTo(target);
+          break;
+        }
+      }
+    };
+    document.addEventListener("keydown", keyboard);
+    return () => document.removeEventListener("keydown", keyboard);
+  }, [
+    source,
+    current,
+    selection,
+    settings.focus,
+    sourceMarks,
+    goTo,
+    saveSettings,
+    setSelection,
+  ]);
   const capture = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
-    const range = selection.getRangeAt(0);
-    const getParagraph = (node: Node) =>
-      (node.nodeType === Node.ELEMENT_NODE
-        ? (node as Element)
-        : node.parentElement
-      )?.closest("[data-paragraph]") as HTMLElement | null;
-    const start = getParagraph(range.startContainer),
-      end = getParagraph(range.endContainer);
-    if (!start || start !== end) return;
-    const paragraphId = Number(start.dataset.paragraph);
-    const text = selection.toString().trim();
-    if (!text) return;
-    const prefix = range.cloneRange();
-    prefix.selectNodeContents(start);
-    prefix.setEnd(range.startContainer, range.startOffset);
-    const raw = selection.toString();
-    const offset =
-      prefix.toString().length + (raw.length - raw.trimStart().length);
-    const rect = range.getBoundingClientRect();
-    setSelection({
-      sourceId: source.id,
-      paragraphId,
-      text,
-      start: offset,
-      end: offset + text.length,
-      left: rect.left,
-      top: rect.bottom,
-      page: source.paragraphs.find((p) => p.id === paragraphId)?.page,
-    });
+    if (article.current) {
+      const captured = captureReadingSelection(article.current, source);
+      if (captured) setSelection(captured);
+    }
   };
   const ask = async () => {
     if (!question.trim() || busy) return;
+    const prompt = question.trim();
+    const controller = new AbortController();
+    requests.current.add(controller);
     setBusy(true);
     setError("");
-    setAnswer("");
     try {
-      const context = source.paragraphs
-        .map((p) => `${p.page ? `[p. ${p.page}]` : `[§ ${p.id}]`} ${p.text}`)
-        .join("\n\n");
-      const response = await assist(
+      const result = await assist(
         "ask",
-        question,
-        context,
-        `${source.author}. ${source.title}. Modo ${depth === "deep" ? "aprofundado, com limites e conexões" : "breve"}.`,
+        prompt,
+        readingContext(source).text,
+        `${source.author}. ${source.title}.`,
+        { web: settings.webSearch, signal: controller.signal },
       );
-      setAnswer(response.answer);
+      const stamp = new Date().toISOString();
+      addMarginNote({
+        sourceId: source.id,
+        paragraphId: 0,
+        type: "qa",
+        title: prompt,
+        content: result.answer,
+        action: "ask",
+        model: result.model,
+        references: result.references,
+        conversation: [
+          { role: "user", content: prompt, createdAt: stamp },
+          {
+            role: "assistant",
+            content: result.answer,
+            createdAt: stamp,
+            model: result.model,
+            references: result.references,
+          },
+        ],
+      });
+      setQuestion("");
+      setNotebook(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível responder.");
+      if (!controller.signal.aborted)
+        setError(
+          e instanceof Error ? e.message : "Não foi possível responder.",
+        );
     } finally {
+      requests.current.delete(controller);
       setBusy(false);
     }
   };
+  const generateBrief = async () => {
+    if (briefBusy) return;
+    setBrief(true);
+    setBriefBusy(true);
+    setBriefError("");
+    const controller = new AbortController();
+    requests.current.add(controller);
+    try {
+      const result = await assist(
+        "overview",
+        "Crie uma síntese, principais afirmações com referências e um mapa do texto.",
+        readingContext(source).text,
+        `${source.author}. ${source.title}.`,
+        { signal: controller.signal },
+      );
+      if (!result.overview)
+        throw new Error("Não recebi uma visão geral válida. Tente novamente.");
+      updateSource(source.id, {
+        overview: {
+          ...result.overview,
+          generatedAt: new Date().toISOString(),
+          model: result.model,
+        },
+      });
+    } catch (e) {
+      if (!controller.signal.aborted)
+        setBriefError(
+          e instanceof Error
+            ? e.message
+            : "Não foi possível gerar a visão geral.",
+        );
+    } finally {
+      requests.current.delete(controller);
+      setBriefBusy(false);
+    }
+  };
+  const stopSpeech = () => {
+    speechSession.current++;
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+    setPaused(false);
+  };
   const speak = () => {
     if (speaking) {
-      window.speechSynthesis.cancel();
-      setSpeaking(false);
+      stopSpeech();
       return;
     }
     if (!("speechSynthesis" in window)) {
-      toast.error("A leitura em voz alta não está disponível neste navegador.");
+      toast.error("Este navegador não oferece leitura em voz alta.");
       return;
     }
-    const text = source.paragraphs.map((p) => p.text).join("\n");
-    if (!text) {
-      toast.error("Esta fonte não tem texto extraído para ouvir.");
-      return;
-    }
-    const chunks = text.match(/.{1,900}(?:[.!?]\s|$)|.{1,900}/gs) ?? [text];
-    let index = 0;
+    const session = ++speechSession.current;
+    let index = Math.max(
+      0,
+      source.paragraphs.findIndex((p) => p.id === current),
+    );
     setSpeaking(true);
+    setPaused(false);
     const next = () => {
-      if (index >= chunks.length) {
+      if (session !== speechSession.current) return;
+      const p = source.paragraphs[index++];
+      if (!p) {
         setSpeaking(false);
         return;
       }
-      const utterance = new SpeechSynthesisUtterance(chunks[index++]);
-      utterance.lang = /\b(the|and|of)\b/i.test(text) ? "en-US" : "pt-BR";
-      utterance.rate = 0.9;
+      const utterance = new SpeechSynthesisUtterance(p.text);
+      utterance.lang = /\b(the|and|of)\b/i.test(p.text) ? "en-US" : "pt-BR";
+      utterance.rate = settings.speechRate;
       utterance.onend = next;
-      utterance.onerror = () => setSpeaking(false);
+      utterance.onerror = () => {
+        if (session === speechSession.current) setSpeaking(false);
+      };
+      setCurrent(p.id);
       speechSynthesis.speak(utterance);
     };
     next();
-  };
-  const goTo = (paragraphId: number) => {
-    setNotebook(false);
-    requestAnimationFrame(() =>
-      document
-        .querySelector(`[data-paragraph="${paragraphId}"]`)
-        ?.scrollIntoView({
-          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
-            ? "instant"
-            : "smooth",
-          block: "center",
-        }),
-    );
   };
   const css = {
     "--reading-width": `${settings.width}px`,
     "--reading-size": `${settings.fontSize}px`,
     "--reading-line": settings.lineHeight,
     "--reading-font":
-      settings.font === "serif" ? "var(--font-serif)" : "var(--font-sans)",
+      settings.font === "book"
+        ? "'Literata Variable', Georgia, serif"
+        : settings.font === "legible"
+          ? "'Atkinson Hyperlegible', sans-serif"
+          : settings.font === "sans"
+            ? "var(--font-sans)"
+            : "var(--font-serif)",
   } as CSSProperties;
+  const renderParagraph = (p: Paragraph, index: number) => {
+    const spans = (
+      highlighted.get(p.id) ?? [
+        { start: 0, end: p.text.length, text: p.text, mark: undefined },
+      ]
+    ).map((run) =>
+      run.mark ? (
+        <mark
+          key={run.start}
+          style={{
+            background: run.mark.color ?? "var(--highlight)",
+            color: "#24221d",
+          }}
+          title="Destaque salvo"
+        >
+          {run.text}
+        </mark>
+      ) : (
+        run.text
+      ),
+    );
+    const props = {
+      id: `paragraph-${p.id}`,
+      "data-paragraph": p.id,
+      "data-reader-text": p.id,
+      className:
+        index === 0 && (!p.kind || p.kind === "paragraph") ? "drop-cap" : "",
+    };
+    if (p.kind === "image" && safeUrl(p.href))
+      return (
+        <figure id={`paragraph-${p.id}`} data-paragraph={p.id}>
+          <img
+            src={safeUrl(p.href)}
+            alt={p.text}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+          <figcaption>{p.text}</figcaption>
+        </figure>
+      );
+    if (p.kind === "heading") return <h2 {...props}>{spans}</h2>;
+    if (p.kind === "code" || p.kind === "table")
+      return (
+        <pre {...props} className={`reading-${p.kind}`}>
+          {spans}
+        </pre>
+      );
+    if (p.kind === "quote") return <blockquote {...props}>{spans}</blockquote>;
+    return (
+      <p {...props}>
+        {p.kind === "list" ? (
+          <span className="list-marker" aria-hidden="true" />
+        ) : null}
+        {spans}
+      </p>
+    );
+  };
   return (
     <div
       className={`reader-page ${settings.indent ? "reader-indented" : ""}`}
       style={css}
     >
+      {settings.minimap && !settings.focus && source.paragraphs.length > 0 && (
+        <ReaderMinimap
+          source={source}
+          marks={sourceMarks}
+          current={current}
+          goTo={goTo}
+        />
+      )}
       <div className="reader-topline">
         <button className="text-button" onClick={() => setTab("fontes")}>
           <ArrowLeft size={14} />
           Biblioteca
         </button>
         <div className="reader-actions">
+          <button
+            className="icon-button mobile-map-button"
+            aria-label="Mapa da leitura"
+            onClick={() => setMapOpen(true)}
+          >
+            <Map size={17} />
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Atalhos do leitor"
+            onClick={() => setKeys(true)}
+          >
+            <Keyboard size={17} />
+          </button>
           <button
             className="icon-button aa-button"
             aria-label="Personalizar leitura"
@@ -294,10 +554,7 @@ export function StudyTab() {
           <button className="reader-tool" onClick={() => setNotebook(true)}>
             <NotebookPen size={15} />
             <span>Caderno</span>
-            <i>
-              {sourceNotes.length +
-                sourceMarks.filter((m) => m.type === "highlight").length}
-            </i>
+            <i>{notebookEntries(source.id, marginNotes, notes).length}</i>
           </button>
           <button
             className="icon-button"
@@ -312,6 +569,7 @@ export function StudyTab() {
               speaking ? "Parar leitura em voz alta" : "Ouvir leitura"
             }
             onClick={speak}
+            disabled={!source.paragraphs.length}
           >
             {speaking ? <VolumeX size={16} /> : <Headphones size={16} />}
           </button>
@@ -319,7 +577,8 @@ export function StudyTab() {
       </div>
       <header className="reader-heading">
         <Overline>
-          {source.topic} {source.excerptOnly ? "· RECORTES SALVOS" : ""}
+          {source.topic}
+          {source.excerptOnly ? " · RECORTES SALVOS" : ""}
         </Overline>
         <h1>{source.title}</h1>
         <div className="reader-description">
@@ -327,17 +586,17 @@ export function StudyTab() {
             {source.author}
             {source.publishedYear ? ` · ${source.publishedYear}` : ""}
             <small>
-              {source.readTime} · {source.paragraphs.length} trechos
+              {source.readTime} · {source.paragraphs.length} parágrafos
               {source.pages ? ` · ${source.pages} páginas` : ""}
             </small>
           </span>
           <div>
-            {source.url && (
+            {safeUrl(source.url) && (
               <a
                 className="text-button"
-                href={source.url}
+                href={safeUrl(source.url)}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 Original
                 <ArrowUpRight size={13} />
@@ -357,55 +616,112 @@ export function StudyTab() {
           </div>
         </div>
       </header>
+      {speaking && (
+        <div className="listen-player">
+          <Headphones size={15} />
+          <span>Ouvindo ¶{current}</span>
+          <button
+            aria-label={paused ? "Continuar áudio" : "Pausar áudio"}
+            onClick={() => {
+              if (paused) speechSynthesis.resume();
+              else speechSynthesis.pause();
+              setPaused(!paused);
+            }}
+          >
+            {paused ? <Play size={15} /> : <Pause size={15} />}
+          </button>
+          <button onClick={stopSpeech}>Parar</button>
+        </div>
+      )}
       <section className="reading-brief">
         <button onClick={() => setBrief(!brief)} aria-expanded={brief}>
           <span>
-            Visão geral{" "}
-            <small>
-              {source.claims.length
-                ? `${source.claims.length} ideias centrais`
-                : `${sourceNotes.length} notas no caderno`}
-            </small>
+            Visão geral <small>Síntese, argumentos e mapa do texto</small>
           </span>
           <ChevronDown size={15} className={brief ? "rotated" : ""} />
         </button>
         {brief && (
           <div className="brief-content">
-            <p>
-              {source.briefSummary ||
-                "O material original e suas observações ficam separados, para você voltar à fonte sempre que precisar."}
-            </p>
-            {source.claims.length > 0 ? (
-              <ol>
-                {source.claims.map((c, i) => (
-                  <li key={i}>{c}</li>
-                ))}
-              </ol>
+            {source.overview ? (
+              <>
+                <AnswerText
+                  text={source.overview.summary}
+                  source={source}
+                  goTo={goTo}
+                />
+                <h3>Principais afirmações</h3>
+                <ol>
+                  {source.overview.claims.map((claim, i) => (
+                    <li key={i}>
+                      {claim.text}{" "}
+                      {claim.paragraphs.map((n) => (
+                        <button
+                          key={n}
+                          className="citation-button"
+                          onClick={() => goTo(n)}
+                        >
+                          [¶{n}]
+                        </button>
+                      ))}
+                    </li>
+                  ))}
+                </ol>
+                <h3>Mapa de leitura</h3>
+                <div className="outline-list">
+                  {source.overview.sections.map((section, i) => (
+                    <button key={i} onClick={() => goTo(section.start)}>
+                      <span>{section.title}</span>
+                      <small>
+                        ¶{section.start}–{section.end}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              </>
             ) : (
-              <ul>
-                {sourceNotes.map((n) => (
-                  <li key={n.id}>{n.title}</li>
-                ))}
-              </ul>
+              <>
+                <p>
+                  {source.briefSummary ||
+                    "Gere uma síntese para localizar as ideias e acompanhar o raciocínio do autor."}
+                </p>
+                {source.claims.length > 0 && (
+                  <ul>
+                    {source.claims.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                )}
+              </>
             )}
-            {source.excerptOnly && (
-              <small>
-                Você está lendo recortes preservados. Importe a obra para
-                consultar o arquivo integral.
-              </small>
+            {briefBusy ? (
+              <Thinking label="Organizando a visão geral…" />
+            ) : (
+              <button
+                className="text-button"
+                disabled={!source.paragraphs.length}
+                onClick={() => void generateBrief()}
+              >
+                {source.overview
+                  ? "Atualizar visão geral"
+                  : "Gerar visão com referências"}
+                <ArrowRight size={13} />
+              </button>
+            )}
+            {briefError && (
+              <p className="inline-error" role="alert">
+                {briefError}
+              </p>
             )}
           </div>
         )}
       </section>
-      {source.lastParagraph && source.progress < 100 && (
-        <button
-          className="continue-reading"
-          onClick={() => goTo(source.lastParagraph!)}
-        >
-          Continuar do trecho {source.lastParagraph}
-          <ArrowRight size={13} />
-        </button>
-      )}
+      {sourceMarks
+        .filter((m) => m.paragraphId === 0)
+        .map((mark) => (
+          <div className="document-conversation" key={mark.id}>
+            <MarginConversation mark={mark} source={source} goTo={goTo} />
+          </div>
+        ))}
       {!source.paragraphs.length && (
         <div className="file-reading">
           {fileUrl && source.mime?.startsWith("image/") ? (
@@ -420,7 +736,7 @@ export function StudyTab() {
               text={
                 source.fileId
                   ? "Este arquivo não tem texto extraído. Abra o original para consultar."
-                  : "Esta obra está no catálogo. Adicione o arquivo ou cole um recorte para ler aqui."
+                  : "Adicione o arquivo ou cole um recorte para ler aqui."
               }
               action={
                 fileUrl ? (
@@ -444,88 +760,55 @@ export function StudyTab() {
       )}
       <article
         className="reader-body"
+        ref={article}
         style={{ textAlign: settings.align }}
         onMouseUp={capture}
         onTouchEnd={() => requestAnimationFrame(capture)}
       >
         {source.paragraphs.map((p, index) => {
-          const marks = sourceMarks.filter((m) => m.paragraphId === p.id);
-          const paragraphNotes = sourceNotes.filter(
-            (n) =>
-              n.paragraphId === p.id && !marks.some((m) => m.noteId === n.id),
+          const marks = sourceMarks.filter(
+            (m) => m.paragraphId === p.id && m.type !== "highlight",
           );
-          const count =
-            marks.filter((m) => m.type !== "highlight").length +
-            paragraphNotes.length;
+          const ownNotes = sourceNotes.filter(
+            (n) =>
+              n.paragraphId === p.id &&
+              !sourceMarks.some((m) => m.noteId === n.id),
+          );
           return (
-            <section className="reader-row" key={p.id}>
+            <section
+              className={`reader-row ${current === p.id ? "current-paragraph" : ""}`}
+              key={p.id}
+            >
               <div className="paragraph-wrap">
                 <div className="paragraph-gutter">
                   {settings.numbers && (
                     <button
-                      className={count ? "has-margin" : ""}
-                      onClick={() =>
-                        document
-                          .getElementById(`margin-${p.id}`)
-                          ?.scrollIntoView({ block: "center" })
-                      }
-                      aria-label={`Trecho ${p.id}, ${count} anotações`}
+                      className={marks.length ? "has-margin" : ""}
+                      aria-label={`Parágrafo ${p.id}, abrir caderno`}
+                      onClick={() => setNotebook(true)}
                     >
                       {String(p.id).padStart(2, "0")}
                     </button>
                   )}
                 </div>
-                <p
-                  data-paragraph={p.id}
-                  className={index === 0 ? "drop-cap" : ""}
-                >
-                  <AnnotatedText paragraph={p} marks={marks} />
-                </p>
+                {renderParagraph(p, index)}
                 {p.page && (
                   <small className="paragraph-page">PÁGINA {p.page}</small>
                 )}
               </div>
-              <aside id={`margin-${p.id}`} className="paragraph-margin">
-                {marks
-                  .filter((m) => m.type !== "highlight")
-                  .map((m) => (
-                    <details
-                      key={m.id}
-                      className="margin-note"
-                      open={m.type === "note" || m.type === "explain"}
-                    >
-                      <summary>
-                        <span>
-                          {m.type === "qa"
-                            ? "PERGUNTA"
-                            : m.type === "reminder"
-                              ? "LEMBRETE"
-                              : m.type === "question"
-                                ? "EM ABERTO"
-                                : "NA MARGEM"}{" "}
-                          · § {p.id}
-                        </span>
-                        <ChevronDown size={11} />
-                      </summary>
-                      {m.quote && <blockquote>{m.quote}</blockquote>}
-                      <p>{m.content}</p>
-                      {m.reminder && (
-                        <small>
-                          Rever em {m.reminder.split("-").reverse().join("/")}
-                        </small>
-                      )}
-                      <button
-                        className="margin-delete"
-                        aria-label="Remover anotação"
-                        onClick={() => deleteMarginNote(m.id)}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </details>
-                  ))}
-                {paragraphNotes.map((n) => (
-                  <div key={n.id} className="margin-note canonical">
-                    <span>NOTA · {n.paginas || `§ ${p.id}`}</span>
+              <aside className="paragraph-margin" id={`margin-${p.id}`}>
+                {marks.map((mark) => (
+                  <MarginConversation
+                    key={mark.id}
+                    mark={mark}
+                    source={source}
+                    goTo={goTo}
+                  />
+                ))}
+                {thinking === p.id && <Thinking />}
+                {ownNotes.map((n) => (
+                  <div className="margin-note canonical" key={n.id}>
+                    <span>SUA NOTA · ¶{p.id}</span>
                     <button
                       onClick={() => {
                         selectNote(n.id);
@@ -536,11 +819,11 @@ export function StudyTab() {
                     </button>
                   </div>
                 ))}
-                {index === 0 && count === 0 && (
+                {index === 0 && !marks.length && !ownNotes.length && (
                   <p className="margin-hint">
-                    Esta margem é sua.
+                    Uma margem para pensar.
                     <br />
-                    Selecione uma linha e guarde uma ideia.
+                    Selecione uma linha, pergunte ou guarde uma ideia.
                   </p>
                 )}
               </aside>
@@ -551,7 +834,7 @@ export function StudyTab() {
       {source.paragraphs.length > 0 && (
         <footer className="reader-foot">
           <span>
-            FIM DOS {source.excerptOnly ? "RECORTES" : "TRECHOS"} ·{" "}
+            FIM {source.excerptOnly ? "DOS RECORTES" : "DA LEITURA"} ·{" "}
             {source.title}
           </span>
           <button className="text-button" onClick={() => setNotebook(true)}>
@@ -561,140 +844,125 @@ export function StudyTab() {
         </footer>
       )}
       <div className="reading-ask">
-        <div className="ask-bar">
-          <Sparkles size={15} />
+        <form
+          className="ask-bar"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void ask();
+          }}
+        >
           <input
+            ref={questionInput}
             aria-label="Perguntar sobre a leitura"
             value={question}
+            maxLength={5000}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Pergunte sobre esta leitura…"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void ask();
-            }}
+            placeholder="Pergunte sobre todo o texto…"
           />
-          <div className="depth-toggle">
-            <button
-              className={depth === "quick" ? "active" : ""}
-              onClick={() => setDepth("quick")}
-            >
-              Breve
-            </button>
-            <button
-              className={depth === "deep" ? "active" : ""}
-              onClick={() => setDepth("deep")}
-            >
-              Profundo
-            </button>
-          </div>
+          <label className="web-switch" title="Consultar fontes externas">
+            <input
+              type="checkbox"
+              checked={settings.webSearch}
+              onChange={(e) => saveSettings({ webSearch: e.target.checked })}
+            />{" "}
+            Web
+          </label>
+          <select
+            className="depth-select"
+            aria-label="Profundidade da resposta"
+            value={settings.answerDepth}
+            onChange={(e) =>
+              saveSettings({ answerDepth: e.target.value as "quick" | "deep" })
+            }
+          >
+            <option value="quick">Rápida</option>
+            <option value="deep">Profunda</option>
+          </select>
           <button
             className="ask-submit"
             aria-label="Enviar pergunta"
             disabled={!question.trim() || busy || !source.paragraphs.length}
-            onClick={() => void ask()}
           >
             {busy ? <span className="spinner" /> : <ArrowRight size={17} />}
           </button>
-        </div>
+        </form>
+        {busy && <Thinking />}
         {error && (
           <p className="inline-error" role="alert">
             {error}
           </p>
         )}
-        {answer && (
-          <div className="reader-answer">
-            <Overline>RESPOSTA SOBRE A LEITURA</Overline>
-            <p>{answer}</p>
-            <button
-              className="text-button"
-              onClick={() => {
-                const n = addNote({
-                  title: question,
-                  content: answer,
-                  fonte: source.id,
-                  paginas: "Leitura",
-                  tags: [source.topic],
-                  claims: [],
-                  commentary: [answer],
-                  questions: [question],
-                  citation: `${source.author}. ${source.title}.`,
-                });
-                toast.success("Resposta guardada nas notas.");
-                setAnswer("");
-              }}
-            >
-              Guardar resposta
-              <Check size={13} />
-            </button>
-          </div>
-        )}
       </div>
-      {preferences && <ReaderSettings close={() => setPreferences(false)} />}{" "}
+      {preferences && <ReaderSettings close={() => setPreferences(false)} />}
       {adding && <AddSourceModal onClose={() => setAdding(false)} />}
       {notebook && (
-        <Modal
-          title={`Caderno · ${source.title}`}
+        <ReaderNotebook
+          source={source}
           close={() => setNotebook(false)}
-          wide
+          goTo={goTo}
+        />
+      )}
+      {mapOpen && (
+        <Modal
+          title="Mapa da leitura"
+          close={() => setMapOpen(false)}
+          className="reader-drawer"
         >
-          <div className="notebook-list">
-            {sourceMarks
-              .filter((m) => m.type === "highlight")
-              .map((m) => (
-                <button
-                  className="notebook-entry"
-                  key={m.id}
-                  onClick={() => goTo(m.paragraphId)}
-                >
-                  <Overline>DESTAQUE · § {m.paragraphId}</Overline>
-                  <blockquote style={{ borderColor: m.color }}>
-                    {m.quote}
-                  </blockquote>
-                  <ArrowUpRight size={14} />
-                </button>
-              ))}
-            {sourceNotes.map((n) => (
-              <div className="notebook-entry" key={n.id}>
-                <Overline>NOTA · {n.paginas}</Overline>
-                <h3>{n.title}</h3>
-                <p>{n.content.slice(0, 320)}</p>
-                <div className="button-row">
-                  {n.paragraphId && (
-                    <button
-                      className="text-button"
-                      onClick={() => goTo(n.paragraphId!)}
-                    >
-                      Voltar ao trecho
-                      <ArrowUpRight size={13} />
-                    </button>
-                  )}
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      selectNote(n.id);
-                      setTab("notas");
-                    }}
-                  >
-                    Abrir nota
-                    <ArrowRight size={13} />
-                  </button>
-                </div>
+          <p>Toque em um trecho para continuar a leitura.</p>
+          <div className="outline-list">
+            {source.paragraphs.map((p) => (
+              <button
+                key={p.id}
+                aria-current={current === p.id ? "location" : undefined}
+                onClick={() => goTo(p.id)}
+              >
+                <span>
+                  {p.text.slice(0, 100)}
+                  {p.text.length > 100 ? "…" : ""}
+                </span>
+                <small>
+                  ¶{p.id}
+                  {sourceMarks.some((m) => m.paragraphId === p.id)
+                    ? " · anotado"
+                    : ""}
+                </small>
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+      {keys && (
+        <Modal title="Atalhos de leitura" close={() => setKeys(false)}>
+          <dl className="keyboard-list">
+            {[
+              ["Selecionar + digitar", "Perguntar sobre o trecho"],
+              ["/", "Perguntar sobre todo o texto"],
+              ["J / K", "Próximo / parágrafo anterior"],
+              ["Enter", "Selecionar parágrafo atual"],
+              ["[ / ]", "Anotação anterior / próxima"],
+              ["B", "Abrir visão geral"],
+              ["N", "Abrir caderno"],
+              ["F", "Alternar foco"],
+              ["Esc", "Fechar painel"],
+              ["?", "Ver atalhos"],
+            ].map(([key, action]) => (
+              <div key={key}>
+                <dt>
+                  <kbd>{key}</kbd>
+                </dt>
+                <dd>{action}</dd>
               </div>
             ))}
-            {!sourceNotes.length && !sourceMarks.length && (
-              <Empty
-                title="A margem está aberta."
-                text="Selecione um trecho para guardar a primeira ideia."
-              />
-            )}
-          </div>
+          </dl>
         </Modal>
       )}
       <TranslatorPopup
         key={
           selection
-            ? `${selection.paragraphId}-${selection.start}-${selection.end}`
+            ? `${selection.sourceId}-${selection.paragraphId}-${selection.start}-${selection.text.length}`
             : "closed"
         }
+        onThinking={setThinking}
       />
     </div>
   );

@@ -1,5 +1,7 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/newsreader";
+@import "@fontsource-variable/literata";
+@import "@fontsource/atkinson-hyperlegible/400.css";
 @import "tailwindcss";
 
 :root {

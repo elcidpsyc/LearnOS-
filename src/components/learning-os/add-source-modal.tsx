@@ -5,23 +5,35 @@ import { useVault, snapshot } from "@/lib/vault/store";
 import { saveFile } from "@/lib/vault/files";
 import { sourceDraft, readFileText, importLink } from "@/lib/study/import";
 import { Modal } from "./ui";
-export function AddSourceModal({ onClose }: { onClose: () => void }) {
+export function AddSourceModal({
+  onClose,
+  initialText = "",
+  initialUrl = "",
+}: {
+  onClose: () => void;
+  initialText?: string;
+  initialUrl?: string;
+}) {
   const addSource = useVault((s) => s.addSource);
   const setActiveSourceId = useVault((s) => s.setActiveSourceId);
   const setTab = useVault((s) => s.setTab);
-  const [mode, setMode] = useState<"link" | "text" | "file">("text");
+  const [mode, setMode] = useState<"link" | "text" | "file">(
+    initialUrl ? "link" : "text",
+  );
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [topic, setTopic] = useState("Psicologia");
-  const [url, setUrl] = useState("");
-  const [text, setText] = useState("");
+  const [url, setUrl] = useState(initialUrl);
+  const [text, setText] = useState(initialText);
+  const [folder, setFolder] = useState("");
+  const [readNow, setReadNow] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const finish = (target: string) => {
     setActiveSourceId(target);
-    setTab("estudar");
+    setTab(readNow ? "estudar" : "fontes");
     onClose();
     toast.success("Fonte adicionada à sua biblioteca.");
   };
@@ -40,6 +52,7 @@ export function AddSourceModal({ onClose }: { onClose: () => void }) {
               topic,
             );
       if (mode === "text") draft.excerptOnly = true;
+      draft.folder = folder.trim();
       const target = addSource(draft);
       finish(target);
     } catch (e) {
@@ -83,6 +96,7 @@ export function AddSourceModal({ onClose }: { onClose: () => void }) {
           fileName: file.name,
           mime: file.type || "application/octet-stream",
           size: file.size,
+          folder: folder.trim(),
         };
         last = addSource(draft);
       }
@@ -211,6 +225,22 @@ export function AddSourceModal({ onClose }: { onClose: () => void }) {
             <option>Escrita</option>
           </datalist>
         </label>
+        <label className="field">
+          Pasta
+          <input
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
+            placeholder="Opcional, ex.: Psicologia / História"
+          />
+        </label>
+        <label className="toggle-field">
+          <input
+            type="checkbox"
+            checked={readNow}
+            onChange={(e) => setReadNow(e.target.checked)}
+          />
+          Abrir para ler ao terminar
+        </label>
         {error && (
           <p className="inline-error" role="alert">
             {error}
@@ -218,7 +248,11 @@ export function AddSourceModal({ onClose }: { onClose: () => void }) {
         )}
         {mode !== "file" && (
           <button className="button primary" disabled={busy}>
-            {busy ? "Importando…" : "Guardar e começar a ler"}
+            {busy
+              ? "Importando…"
+              : readNow
+                ? "Guardar e começar a ler"
+                : "Guardar na biblioteca"}
             <ArrowRight size={16} />
           </button>
         )}

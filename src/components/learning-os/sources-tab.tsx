@@ -13,7 +13,10 @@ import {
   Cloud,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { useVault } from "@/lib/vault/store";
+import { useVault, snapshot } from "@/lib/vault/store";
+import { exportNotebooks, safeUrl, readingContext } from "@/lib/study/reader";
+import { assist } from "@/lib/study/ai";
+import { DailyHighlights, BookmarkImport } from "./library-extras";
 import { getFile, download, removeFile } from "@/lib/vault/files";
 import type { Source } from "@/lib/vault/types";
 import { toast } from "sonner";
@@ -34,8 +37,14 @@ export function SourcesTab() {
     settings,
     deleteSource,
     setSettingsOpen,
+    updateSource,
   } = useVault((s) => s);
-  const [view, setView] = useState<"shelf" | "topics" | "list">("shelf");
+  const [view, setView] = useState<"shelf" | "covers" | "topics" | "list">(
+    "shelf",
+  );
+  const [folder, setFolder] = useState("");
+  const [bookmarks, setBookmarks] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [edition, setEdition] = useState(false);
@@ -53,19 +62,34 @@ export function SourcesTab() {
               (shelfFilter === "agent"
                 ? s.origin === "agent"
                 : s.topic === shelfFilter)) &&
-            `${s.title} ${s.author} ${s.topic}`
+            (!folder || s.folder === folder) &&
+            `${s.title} ${s.author} ${s.topic} ${(s.tags ?? []).join(" ")} ${notes
+              .filter((n) => n.fonte === s.id)
+              .map((n) => `${n.title} ${n.content}`)
+              .join(" ")} ${marginNotes
+              .filter((m) => m.sourceId === s.id)
+              .map(
+                (m) =>
+                  `${m.quote ?? ""} ${m.content} ${m.conversation?.map((t) => t.content).join(" ") ?? ""}`,
+              )
+              .join(" ")}`
               .toLowerCase()
               .includes(query.toLowerCase()),
         )
         .sort((a, b) =>
-          shelfSort === "topic"
-            ? a.topic.localeCompare(b.topic) || a.title.localeCompare(b.title)
-            : shelfSort === "length"
-              ? parseInt(a.readTime) - parseInt(b.readTime)
-              : b.createdAt.localeCompare(a.createdAt) ||
-                a.title.localeCompare(b.title),
+          shelfSort === "color"
+            ? a.spineColor.localeCompare(b.spineColor)
+            : shelfSort === "reading"
+              ? (b.lastReadAt ?? "").localeCompare(a.lastReadAt ?? "")
+              : shelfSort === "topic"
+                ? a.topic.localeCompare(b.topic) ||
+                  a.title.localeCompare(b.title)
+                : shelfSort === "length"
+                  ? parseInt(a.readTime) - parseInt(b.readTime)
+                  : b.createdAt.localeCompare(a.createdAt) ||
+                    a.title.localeCompare(b.title),
         ),
-    [sources, shelfFilter, query, shelfSort],
+    [sources, notes, marginNotes, folder, shelfFilter, query, shelfSort],
   );
   const open = (s: Source) => {
     setActiveSourceId(s.id);
@@ -99,6 +123,9 @@ export function SourcesTab() {
           </p>
         </div>
         <div className="heading-actions">
+          <button className="button subtle" onClick={() => setBookmarks(true)}>
+            Bookmarks
+          </button>
           <button className="button subtle" onClick={() => setEdition(true)}>
             <Printer size={15} />
             <span>Minha edição</span>
@@ -109,6 +136,28 @@ export function SourcesTab() {
           </button>
         </div>
       </div>
+      <DailyHighlights />
+      {sources.some((s) => s.lastReadAt) && (
+        <div className="resume-strip">
+          <Overline>CONTINUE DE ONDE PAROU</Overline>
+          {[...sources]
+            .filter((s) => s.lastReadAt)
+            .sort((a, b) => b.lastReadAt!.localeCompare(a.lastReadAt!))
+            .slice(0, 3)
+            .map((s) => (
+              <button key={s.id} onClick={() => open(s)}>
+                <BookOpen size={18} />
+                <span>
+                  <strong>{s.title}</strong>
+                  <small>
+                    ¶{s.lastParagraph ?? 1} · {s.progress}% lido
+                  </small>
+                </span>
+                <ArrowUpRight size={15} />
+              </button>
+            ))}
+        </div>
+      )}
       {agentCount > 0 && (
         <button
           className="agent-notice"
@@ -129,6 +178,12 @@ export function SourcesTab() {
           >
             <Library size={14} />
             Estante
+          </button>
+          <button
+            className={view === "covers" ? "active" : ""}
+            onClick={() => setView("covers")}
+          >
+            Capas
           </button>
           <button
             className={view === "topics" ? "active" : ""}
@@ -164,9 +219,34 @@ export function SourcesTab() {
             <option value="recent">Recentes</option>
             <option value="topic">Tema</option>
             <option value="length">Tempo de leitura</option>
+            <option value="color">Cor</option>
+            <option value="reading">Última leitura</option>
           </select>
         </label>
       </div>
+      {sources.some((s) => s.folder) && (
+        <div className="folder-filters" aria-label="Pastas">
+          <button
+            className={!folder ? "active" : ""}
+            onClick={() => setFolder("")}
+          >
+            Todas as pastas
+          </button>
+          {[...new Set(sources.map((s) => s.folder).filter(Boolean))].map(
+            (f) => (
+              <button
+                className={folder === f ? "active" : ""}
+                key={f}
+                onClick={() => setFolder(f!)}
+              >
+                <span className="folder-shape" />
+                {f}
+                <small>{sources.filter((s) => s.folder === f).length}</small>
+              </button>
+            ),
+          )}
+        </div>
+      )}
       <div className="topic-filters">
         <button
           className={shelfFilter === "all" ? "active" : ""}
@@ -209,6 +289,42 @@ export function SourcesTab() {
             </button>
           }
         />
+      ) : view === "covers" ? (
+        <div className="cover-grid">
+          {filtered.map((s) => (
+            <div key={s.id} className="cover-item">
+              <button
+                className="book-cover"
+                style={{ background: s.spineColor, color: s.spineTextColor }}
+                onClick={() => open(s)}
+                aria-label={`Ler ${s.title}`}
+              >
+                {safeUrl(s.coverUrl) && (
+                  <img
+                    src={safeUrl(s.coverUrl)}
+                    referrerPolicy="no-referrer"
+                    alt=""
+                    loading="lazy"
+                  />
+                )}
+                <small>{s.format}</small>
+                <strong>{s.title}</strong>
+                <span>{s.author}</span>
+                <i style={{ width: `${s.progress}%` }} />
+              </button>
+              <div className="cover-caption">
+                <span>{s.topic}</span>
+                <button
+                  className="icon-button"
+                  aria-label={`Detalhes de ${s.title}`}
+                  onClick={() => setDetails(s)}
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : view === "shelf" ? (
         <>
           <section className="bookshelf" aria-label="Estante de fontes">
@@ -245,6 +361,9 @@ export function SourcesTab() {
                       style={{ height: `${s.progress}%` }}
                     />
                   </motion.button>
+                  <button className="book-name" onClick={() => open(s)}>
+                    {s.title}
+                  </button>
                   <div className="book-preview">
                     <span>{s.topic}</span>
                     <strong>{s.title}</strong>
@@ -351,6 +470,17 @@ export function SourcesTab() {
             {notes.length} notas e {marginNotes.length} marcações guardadas.
             <br />O que você leu pode continuar conversando com você.
           </p>
+          <button
+            className="text-button"
+            onClick={() =>
+              void exportNotebooks(snapshot()).catch(() =>
+                toast.error("Não foi possível exportar os cadernos."),
+              )
+            }
+          >
+            <Download size={14} />
+            Exportar todos os cadernos
+          </button>
         </div>
         <button
           className="library-connect"
@@ -365,6 +495,7 @@ export function SourcesTab() {
         </button>
       </div>
       {adding && <AddSourceModal onClose={() => setAdding(false)} />}{" "}
+      {bookmarks && <BookmarkImport close={() => setBookmarks(false)} />}
       {edition && <GlossEditionModal onClose={() => setEdition(false)} />}
       {details && (
         <Modal title="Sobre esta fonte" close={() => setDetails(null)}>
@@ -374,6 +505,108 @@ export function SourcesTab() {
               {details.origin === "example" ? "EXEMPLO" : details.topic}
             </Overline>
             <h3>{details.title}</h3>
+            <label className="field">
+              Título
+              <input
+                value={details.title}
+                onChange={(e) =>
+                  setDetails({ ...details, title: e.target.value })
+                }
+              />
+            </label>
+            <div className="field-row">
+              <label className="field">
+                Tema
+                <input
+                  value={details.topic}
+                  onChange={(e) =>
+                    setDetails({ ...details, topic: e.target.value })
+                  }
+                />
+              </label>
+              <label className="field">
+                Pasta
+                <input
+                  value={details.folder ?? ""}
+                  onChange={(e) =>
+                    setDetails({ ...details, folder: e.target.value })
+                  }
+                  placeholder="Ex.: Psicologia / História"
+                />
+              </label>
+            </div>
+            <label className="field">
+              Tags, separadas por vírgula
+              <input
+                value={(details.tags ?? []).join(", ")}
+                onChange={(e) =>
+                  setDetails({
+                    ...details,
+                    tags: e.target.value.split(",").map((t) => t.trim()),
+                  })
+                }
+              />
+            </label>
+            <label className="field">
+              Cor da capa
+              <input
+                type="color"
+                value={details.spineColor}
+                onChange={(e) =>
+                  setDetails({ ...details, spineColor: e.target.value })
+                }
+              />
+            </label>
+            <div className="button-row">
+              <button
+                className="button"
+                disabled={!details.title.trim()}
+                onClick={() => {
+                  updateSource(details.id, {
+                    title: details.title.trim(),
+                    topic: details.topic.trim() || "Sem categoria",
+                    folder: details.folder?.trim(),
+                    tags: details.tags?.filter(Boolean),
+                    spineColor: details.spineColor,
+                  });
+                  toast.success("Organização salva.");
+                  setDetails(null);
+                }}
+              >
+                Salvar organização
+              </button>
+              <button
+                className="button subtle"
+                disabled={suggesting || !details.paragraphs.length}
+                onClick={async () => {
+                  setSuggesting(true);
+                  try {
+                    const result = await assist(
+                      "classify",
+                      "Sugira um tema e tags para organizar este material.",
+                      readingContext(details, [], 20000).text,
+                      details.title,
+                    );
+                    if (result.classification)
+                      setDetails((previous) =>
+                        previous?.id === details.id
+                          ? { ...previous, ...result.classification }
+                          : previous,
+                      );
+                  } catch (e) {
+                    toast.error(
+                      e instanceof Error
+                        ? e.message
+                        : "A sugestão não ficou disponível.",
+                    );
+                  } finally {
+                    setSuggesting(false);
+                  }
+                }}
+              >
+                {suggesting ? "Pensando…" : "Sugerir organização"}
+              </button>
+            </div>
             <p>
               {details.author}
               {details.publishedYear ? ` · ${details.publishedYear}` : ""}
