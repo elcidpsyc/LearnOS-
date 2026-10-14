@@ -206,7 +206,7 @@ export function ReaderSettings({ close }: { close: () => void }) {
                 type="range"
                 min={440}
                 max={820}
-                step={20}
+                step={10}
                 value={settings.width}
                 onChange={(e) =>
                   saveSettings({ width: Number(e.target.value) })

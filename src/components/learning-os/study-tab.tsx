@@ -101,6 +101,13 @@ function Reader({ source }: { source: Source }) {
   const questionInput = useRef<HTMLInputElement>(null);
   const requests = useRef(new Set<AbortController>());
   const speechSession = useRef(0);
+  const navigationTarget = useRef<number | null>(null);
+  const readingPosition = useRef({
+    latest: source.lastParagraph ?? 0,
+    progress: source.progress,
+  });
+  const paragraphs = useRef(source.paragraphs);
+  paragraphs.current = source.paragraphs;
   const sourceMarks = useMemo(
     () => marginNotes.filter((m) => m.sourceId === source.id),
     [marginNotes, source.id],
@@ -110,19 +117,39 @@ function Reader({ source }: { source: Source }) {
     [source.paragraphs, sourceMarks],
   );
   const sourceNotes = notes.filter((n) => n.fonte === source.id);
-  const goTo = useCallback((paragraphId: number) => {
-    setNotebook(false);
-    setMapOpen(false);
-    setCurrent(paragraphId);
-    requestAnimationFrame(() =>
-      document.getElementById(`paragraph-${paragraphId}`)?.scrollIntoView({
-        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "instant"
-          : "smooth",
-        block: "center",
-      }),
-    );
-  }, []);
+  const goTo = useCallback(
+    (paragraphId: number) => {
+      const index = paragraphs.current.findIndex((p) => p.id === paragraphId);
+      if (index < 0) return;
+      navigationTarget.current = paragraphId;
+      Object.assign(readingPosition.current, {
+        latest: paragraphId,
+        progress: Math.max(
+          readingPosition.current.progress,
+          Math.round(((index + 1) / paragraphs.current.length) * 100),
+        ),
+      });
+      updateSource(source.id, {
+        lastParagraph: paragraphId,
+        progress: readingPosition.current.progress,
+        lastReadAt: new Date().toISOString(),
+      });
+      setNotebook(false);
+      setMapOpen(false);
+      setCurrent(paragraphId);
+      requestAnimationFrame(() =>
+        document
+          .getElementById(`paragraph-${paragraphId}`)
+          ?.scrollIntoView({
+            behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+              ? "instant"
+              : "smooth",
+            block: "center",
+          }),
+      );
+    },
+    [source.id, updateSource],
+  );
   useEffect(() => {
     if (readerNavigation?.sourceId === source.id) {
       if (readerNavigation.paragraphId) goTo(readerNavigation.paragraphId);
@@ -155,10 +182,34 @@ function Reader({ source }: { source: Source }) {
   useEffect(() => {
     if (!article.current) return;
     let timer: ReturnType<typeof setTimeout>;
-    let latest = source.lastParagraph ?? 0;
-    let progress = source.progress;
+    const position = readingPosition.current;
+    const manualScroll = () => {
+      navigationTarget.current = null;
+    };
+    const scrollingKey = (event: KeyboardEvent) => {
+      if (
+        [
+          "PageDown",
+          "PageUp",
+          "ArrowDown",
+          "ArrowUp",
+          "Home",
+          "End",
+          " ",
+        ].includes(event.key) &&
+        !(event.target as Element)?.closest(
+          "input,textarea,select,[contenteditable],dialog",
+        )
+      )
+        manualScroll();
+    };
+    window.addEventListener("wheel", manualScroll, { passive: true });
+    window.addEventListener("touchmove", manualScroll, { passive: true });
+    document.addEventListener("pointerdown", manualScroll);
+    document.addEventListener("keydown", scrollingKey);
     const observer = new IntersectionObserver(
       (entries) => {
+        if (navigationTarget.current !== null) return;
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort(
@@ -170,20 +221,20 @@ function Reader({ source }: { source: Source }) {
         const paragraphId = Number(
           (visible[0].target as HTMLElement).dataset.paragraph,
         );
-        if (latest === paragraphId) return;
-        latest = paragraphId;
+        if (position.latest === paragraphId) return;
+        position.latest = paragraphId;
         setCurrent(paragraphId);
         const index = source.paragraphs.findIndex((p) => p.id === paragraphId);
-        progress = Math.max(
-          progress,
+        position.progress = Math.max(
+          position.progress,
           Math.round(((index + 1) / source.paragraphs.length) * 100),
         );
         clearTimeout(timer);
         timer = setTimeout(
           () =>
             updateSource(source.id, {
-              lastParagraph: latest,
-              progress,
+              lastParagraph: readingPosition.current.latest,
+              progress: readingPosition.current.progress,
               lastReadAt: new Date().toISOString(),
             }),
           450,
@@ -197,10 +248,14 @@ function Reader({ source }: { source: Source }) {
     return () => {
       observer.disconnect();
       clearTimeout(timer);
-      if (latest)
+      window.removeEventListener("wheel", manualScroll);
+      window.removeEventListener("touchmove", manualScroll);
+      document.removeEventListener("pointerdown", manualScroll);
+      document.removeEventListener("keydown", scrollingKey);
+      if (readingPosition.current.latest)
         updateSource(source.id, {
-          lastParagraph: latest,
-          progress,
+          lastParagraph: readingPosition.current.latest,
+          progress: readingPosition.current.progress,
           lastReadAt: new Date().toISOString(),
         });
     };

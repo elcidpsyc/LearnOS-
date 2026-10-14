@@ -48,4 +48,10 @@ Tradução somente quando solicitada; comparação de dois materiais; anotação
 
 ## Verificação
 
-Testes de regressão cobrem âncoras/sobreposições, migração de configurações, conversas nos backups, deduplicação de notas, contexto parcial, importação de bookmarks, URLs renderizadas e mesclagem com exclusões. Os resultados de compilação e navegador serão registrados após a verificação da prévia desta branch.
+Testes de regressão cobrem âncoras/sobreposições, migração de configurações, conversas nos backups, deduplicação de notas, contexto parcial, importação de bookmarks, URLs renderizadas e mesclagem com exclusões. Compilação Vite, TypeScript do frontend/API e 13 testes de regressão aprovados.
+
+Na prévia `6d4f0bd`, foram exercitados no navegador: criação de texto original em seis parágrafos, seleção real atravessando dois parágrafos e destaque azul, anotação vinculada à margem, caderno com exatamente dois registros sem duplicação, exportação Markdown baixada (733 bytes, referência ¶1–¶2 e anotação preservadas), busca da anotação na fonte já aberta, tema noturno, fonte Atkinson Hyperlegible e modo foco. Layout observado em larguras de 1363 e 500 px; sem rolagem horizontal na observação de 500 px. Isso não substitui validação em aparelhos físicos.
+
+`/api/status` respondeu 200 com armazenamento e credencial de IA disponíveis e `webSearch:false`. Uma chamada real, após conectar um espaço privado de teste, foi recusada pela conta do AI Gateway. Portanto, geração, continuação/regeneração de respostas, visão geral, comparação por IA e classificação não foram validadas com resposta bem-sucedida. A falha preservou o texto, o destaque e a anotação. Não houve tentativa de simular respostas.
+
+A revisão incorporou a correção anterior de sobrescrita condicional de Blob (`allowOverwrite` junto de `ifMatch`) ao salvar espaços e contadores, mantendo a proteção por ETag. A navegação programática passou a preservar explicitamente o parágrafo escolhido até a rolagem manual; isso evita perder o destino perto do fim de documentos curtos.
