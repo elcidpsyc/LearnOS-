@@ -234,12 +234,21 @@ export function MarginConversation({
             : mark.type === "reminder"
               ? "LEMBRETE"
               : "SUA NOTA"}{" "}
-          · {mark.paragraphId ? `¶${mark.paragraphId}` : "TEXTO INTEIRO"}
+          ·{" "}
+          {mark.anchorStatus === "unmatched"
+            ? "TRECHO DA VERSÃO ANTERIOR"
+            : mark.paragraphId
+              ? `¶${mark.paragraphId}`
+              : "TEXTO INTEIRO"}
         </span>
         <span>⌄</span>
       </summary>
       {mark.quote && (
-        <button className="quote-anchor" onClick={() => goTo(mark.paragraphId)}>
+        <button
+          className="quote-anchor"
+          disabled={!mark.paragraphId}
+          onClick={() => goTo(mark.paragraphId)}
+        >
           <blockquote>{mark.quote}</blockquote>
         </button>
       )}
@@ -516,9 +525,11 @@ export function ReaderNotebook({
                     ? "PERGUNTA"
                     : "NOTA"}{" "}
                 ·{" "}
-                {entry.paragraphId
-                  ? `¶${entry.paragraphId}`
-                  : "MATERIAL INTEIRO"}
+                {entry.anchorStatus === "unmatched"
+                  ? "TRECHO DA VERSÃO ANTERIOR · CONFERIR"
+                  : entry.paragraphId
+                    ? `¶${entry.paragraphId}`
+                    : "MATERIAL INTEIRO"}
               </Overline>
               {entry.quote && (
                 <blockquote style={{ borderColor: entry.mark?.color }}>

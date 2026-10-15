@@ -20,6 +20,8 @@ export type Paragraph = {
   text: string;
   page?: string;
   firstLetterDrop?: boolean;
+  pageEnd?: string;
+  section?: string;
   kind?:
     "paragraph" | "heading" | "quote" | "list" | "code" | "table" | "image";
   href?: string;
@@ -57,6 +59,10 @@ export type Source = {
   tags?: string[];
   folder?: string;
   coverUrl?: string;
+  coverImage?: string;
+  language?: string;
+  contentRevision?: number;
+  extraction?: import("../study/document-layout").ExtractionReport;
   overview?: {
     summary: string;
     claims: { text: string; paragraphs: number[] }[];
@@ -66,6 +72,7 @@ export type Source = {
   };
 };
 export type Note = {
+  anchorStatus?: "verified" | "unmatched";
   id: string;
   title: string;
   content: string;
@@ -83,6 +90,7 @@ export type Note = {
   highlights?: string[];
 };
 export type MarginNote = {
+  anchorStatus?: "verified" | "unmatched";
   id: string;
   sourceId: string;
   paragraphId: number;
@@ -110,6 +118,7 @@ export type MarginNote = {
   comparisonSourceId?: string;
 };
 export type Card = {
+  anchorStatus?: "verified" | "unmatched";
   id: string;
   frente: string;
   verso: string;

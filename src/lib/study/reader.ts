@@ -195,6 +195,7 @@ export function readingContext(
   };
 }
 export type NotebookEntry = {
+  anchorStatus?: "verified" | "unmatched";
   id: string;
   kind: "highlight" | "question" | "note";
   title: string;
@@ -225,6 +226,7 @@ export function notebookEntries(
       content: m.content,
       quote: m.quote,
       paragraphId: m.paragraphId,
+      anchorStatus: m.anchorStatus,
       mark: m,
       date: m.createdAt,
     })),
@@ -237,6 +239,7 @@ export function notebookEntries(
         content: n.content,
         quote: n.quote,
         paragraphId: n.paragraphId,
+        anchorStatus: n.anchorStatus,
         note: n,
         date: n.createdAt,
       })),
@@ -260,9 +263,11 @@ export function notebookMarkdown(
     lines.push(
       `## ${entry.kind === "highlight" ? "Destaque" : entry.title}`,
       "",
-      entry.paragraphId
-        ? `Referência: ¶${entry.paragraphId}${entry.mark?.anchors?.length ? `–¶${entry.mark.anchors.at(-1)!.paragraphId}` : ""}`
-        : "Referência: material inteiro",
+      entry.anchorStatus === "unmatched"
+        ? "Referência: trecho da versão anterior (conferir)"
+        : entry.paragraphId
+          ? `Referência: ¶${entry.paragraphId}${entry.mark?.anchors?.length ? `–¶${entry.mark.anchors.at(-1)!.paragraphId}` : ""}`
+          : "Referência: material inteiro",
       "",
     );
     if (entry.quote)

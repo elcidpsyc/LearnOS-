@@ -41,6 +41,8 @@ const source = z.object({
       id: z.number(),
       text,
       page: text.optional(),
+      pageEnd: text.optional(),
+      section: text.optional(),
       firstLetterDrop: z.boolean().optional(),
       kind: z
         .enum([
@@ -75,6 +77,29 @@ const source = z.object({
   tags: z.array(text).optional(),
   folder: text.optional(),
   coverUrl: text.optional(),
+  coverImage: text
+    .max(150000)
+    .regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/)
+    .optional(),
+  language: text.optional(),
+  contentRevision: z.number().int().nonnegative().optional(),
+  extraction: z
+    .object({
+      engine: z.literal("layout-v2"),
+      options: z.object({
+        columns: z.enum(["auto", "single", "double"]),
+        joinLines: z.boolean(),
+        removeHeaders: z.boolean(),
+        joinHyphens: z.boolean(),
+      }),
+      warnings: z.array(text),
+      emptyPages: z.array(z.number()),
+      removedHeaders: z.number(),
+      columnPages: z.number(),
+      chapterCount: z.number(),
+      generatedAt: text,
+    })
+    .optional(),
   overview: z
     .object({
       summary: text,
@@ -88,6 +113,7 @@ const source = z.object({
     .optional(),
 });
 const note = z.object({
+  anchorStatus: z.enum(["verified", "unmatched"]).optional(),
   ...entity,
   title: text,
   content: text,
@@ -103,6 +129,7 @@ const note = z.object({
   highlights: z.array(text).optional(),
 });
 const card = z.object({
+  anchorStatus: z.enum(["verified", "unmatched"]).optional(),
   ...entity,
   frente: text,
   verso: text,
@@ -118,6 +145,7 @@ const card = z.object({
   interval: z.number(),
 });
 const margin = z.object({
+  anchorStatus: z.enum(["verified", "unmatched"]).optional(),
   ...entity,
   sourceId: text,
   paragraphId: z.number(),

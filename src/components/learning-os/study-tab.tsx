@@ -21,9 +21,10 @@ import {
   Pause,
   Play,
   Map,
+  ScanText,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useVault } from "@/lib/vault/store";
+import { useVault, snapshot } from "@/lib/vault/store";
 import type { Source, Paragraph } from "@/lib/vault/types";
 import { assist } from "@/lib/study/ai";
 import {
@@ -37,6 +38,7 @@ import { getFile } from "@/lib/vault/files";
 import { ReaderSettings } from "./reader-settings";
 import { TranslatorPopup } from "./translator-popup";
 import { AddSourceModal } from "./add-source-modal";
+import { ReorganizeSourceModal } from "./file-import-panel";
 import { Empty, Modal, Overline } from "./ui";
 import {
   AnswerText,
@@ -50,7 +52,10 @@ export function StudyTab() {
   const { sources, activeSourceId, setTab } = useVault((s) => s);
   const source = sources.find((s) => s.id === activeSourceId) ?? sources[0];
   return source ? (
-    <Reader key={source.id} source={source} />
+    <Reader
+      key={`${source.id}:${source.contentRevision ?? 0}`}
+      source={source}
+    />
   ) : (
     <Empty
       title="Sua próxima leitura começa aqui."
@@ -80,6 +85,7 @@ function Reader({ source }: { source: Source }) {
     readerNavigation,
   } = useVault((s) => s);
   const [preferences, setPreferences] = useState(false);
+  const [reorganizing, setReorganizing] = useState(false);
   const [notebook, setNotebook] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [keys, setKeys] = useState(false);
@@ -138,14 +144,12 @@ function Reader({ source }: { source: Source }) {
       setMapOpen(false);
       setCurrent(paragraphId);
       requestAnimationFrame(() =>
-        document
-          .getElementById(`paragraph-${paragraphId}`)
-          ?.scrollIntoView({
-            behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
-              ? "instant"
-              : "smooth",
-            block: "center",
-          }),
+        document.getElementById(`paragraph-${paragraphId}`)?.scrollIntoView({
+          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "instant"
+            : "smooth",
+          block: "center",
+        }),
       );
     },
     [source.id, updateSource],
@@ -252,7 +256,7 @@ function Reader({ source }: { source: Source }) {
       window.removeEventListener("touchmove", manualScroll);
       document.removeEventListener("pointerdown", manualScroll);
       document.removeEventListener("keydown", scrollingKey);
-      if (readingPosition.current.latest)
+      if (readingPosition.current.latest && snapshot().sources.find(s=>s.id===source.id)?.contentRevision===source.contentRevision)
         updateSource(source.id, {
           lastParagraph: readingPosition.current.latest,
           progress: readingPosition.current.progress,
@@ -585,6 +589,16 @@ function Reader({ source }: { source: Source }) {
           Biblioteca
         </button>
         <div className="reader-actions">
+          {source.fileId && /^(PDF|EPUB|DOCX)$/i.test(source.format) && (
+            <button
+              className="icon-button"
+              aria-label="Organizar texto do material"
+              title="Organizar texto do material"
+              onClick={() => setReorganizing(true)}
+            >
+              <ScanText size={17} />
+            </button>
+          )}
           <button
             className="icon-button mobile-map-button"
             aria-label="Mapa da leitura"
@@ -770,6 +784,25 @@ function Reader({ source }: { source: Source }) {
           </div>
         )}
       </section>
+      {source.paragraphs.some((p) => p.kind === "heading") && (
+        <details className="chapter-index">
+          <summary>
+            Sumário do arquivo ·{" "}
+            {source.paragraphs.filter((p) => p.kind === "heading").length}{" "}
+            títulos
+          </summary>
+          <nav aria-label="Títulos do material">
+            {source.paragraphs
+              .filter((p) => p.kind === "heading")
+              .map((p) => (
+                <button key={p.id} onClick={() => goTo(p.id)}>
+                  <span>{p.text}</span>
+                  <small>{p.page ? `p. ${p.page}` : `¶${p.id}`}</small>
+                </button>
+              ))}
+          </nav>
+        </details>
+      )}
       {sourceMarks
         .filter((m) => m.paragraphId === 0)
         .map((mark) => (
@@ -848,7 +881,10 @@ function Reader({ source }: { source: Source }) {
                 </div>
                 {renderParagraph(p, index)}
                 {p.page && (
-                  <small className="paragraph-page">PÁGINA {p.page}</small>
+                  <small className="paragraph-page">
+                    PÁGINA {p.page}
+                    {p.pageEnd ? `–${p.pageEnd}` : ""}
+                  </small>
                 )}
               </div>
               <aside className="paragraph-margin" id={`margin-${p.id}`}>
@@ -949,6 +985,12 @@ function Reader({ source }: { source: Source }) {
         )}
       </div>
       {preferences && <ReaderSettings close={() => setPreferences(false)} />}
+      {reorganizing && (
+        <ReorganizeSourceModal
+          source={source}
+          close={() => setReorganizing(false)}
+        />
+      )}
       {adding && <AddSourceModal onClose={() => setAdding(false)} />}
       {notebook && (
         <ReaderNotebook

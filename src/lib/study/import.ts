@@ -1,6 +1,13 @@
 import type { Source, Paragraph } from "../vault/types";
 import { snapshot } from "../vault/store";
 import { sourceDraft } from "./source";
+import {
+  organizePdf,
+  type ImportOptions,
+  type PdfPage,
+  type ExtractionReport,
+} from "./document-layout";
+import { readEpub } from "./epub";
 export { sourceDraft, sourceColors } from "./source";
 export async function importLink(
   url: string,
@@ -32,53 +39,66 @@ export async function importLink(
 export async function readFileText(
   file: File,
   progress: (message: string) => void,
-): Promise<{
-  text: string;
-  pages: number;
-  paragraphs?: Paragraph[];
-  format: string;
-}> {
+  options: Partial<ImportOptions> = {},
+  signal?: AbortSignal,
+): Promise<FileReadResult> {
+  signal?.throwIfAborted();
   const extension = file.name.split(".").at(-1)?.toLowerCase();
   if (extension === "pdf" || file.type === "application/pdf") {
     const pdf = await import("pdfjs-dist");
     const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
     pdf.GlobalWorkerOptions.workerSrc = worker.default;
     const task = pdf.getDocument({ data: await file.arrayBuffer() });
-    const document = await task.promise;
-    const paragraphs: Paragraph[] = [];
+    const abort = () => {
+      void task.destroy();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
     try {
-      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
-        progress(`Lendo página ${pageNumber} de ${document.numPages}…`);
-        const page = await document.getPage(pageNumber);
+      const document = await task.promise;
+      const pages: PdfPage[] = [];
+      for (let number = 1; number <= document.numPages; number++) {
+        signal?.throwIfAborted();
+        progress(`Organizando página ${number} de ${document.numPages}…`);
+        const page = await document.getPage(number);
+        const viewport = page.getViewport({ scale: 1 });
         const content = await page.getTextContent();
-        let block = "";
-        const blocks: string[] = [];
-        for (const item of content.items) {
-          if ("str" in item) {
-            block += item.str + (item.hasEOL ? "\n" : " ");
-            if (item.hasEOL && block.length > 850) {
-              blocks.push(block.trim());
-              block = "";
-            }
-          }
-        }
-        if (block.trim()) blocks.push(block.trim());
-        for (const text of blocks)
-          paragraphs.push({
-            id: paragraphs.length + 1,
-            text,
-            page: String(pageNumber),
-            firstLetterDrop: paragraphs.length === 0,
-          });
+        pages.push({
+          number,
+          width: viewport.width,
+          height: viewport.height,
+          items: content.items.flatMap((item) => {
+            if (!("str" in item)) return [];
+            const transform = pdf.Util.transform(
+              viewport.transform,
+              item.transform,
+            );
+            return [
+              {
+                text: item.str,
+                x: transform[4],
+                y: transform[5],
+                width: item.width,
+                height: Math.hypot(transform[2], transform[3]),
+                font: item.fontName,
+              },
+            ];
+          }),
+        });
         page.cleanup();
       }
+      signal?.throwIfAborted();
+      const metadata = await document.getMetadata().catch(() => undefined);
+      const info = metadata?.info as
+        { Title?: string; Author?: string } | undefined;
       return {
-        text: paragraphs.map((p) => p.text).join("\n\n"),
+        ...organizePdf(pages, options),
         pages: document.numPages,
-        paragraphs,
         format: "PDF",
+        title: info?.Title,
+        author: info?.Author,
       };
     } finally {
+      signal?.removeEventListener("abort", abort);
       await task.destroy();
     }
   }
@@ -86,66 +106,17 @@ export async function readFileText(
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(file);
     const parser = new DOMParser();
-    let parts: string[] = [];
-    if (extension === "docx") {
-      const xml = await zip.file("word/document.xml")?.async("string");
-      if (!xml) throw new Error("Este DOCX não contém um documento legível.");
-      const document = parser.parseFromString(xml, "application/xml");
-      parts = [...document.getElementsByTagName("w:p")]
-        .map((p) =>
-          [...p.getElementsByTagName("w:t")].map((t) => t.textContent).join(""),
-        )
-        .filter(Boolean);
-    } else {
-      const container = await zip
-        .file("META-INF/container.xml")
-        ?.async("string");
-      const opfPath = container
-        ? parser
-            .parseFromString(container, "application/xml")
-            .querySelector("rootfile")
-            ?.getAttribute("full-path")
-        : undefined;
-      const opf = opfPath
-        ? await zip.file(opfPath)?.async("string")
-        : undefined;
-      let paths: string[] = [];
-      if (opf && opfPath) {
-        const doc = parser.parseFromString(opf, "application/xml");
-        const folder = opfPath.includes("/")
-          ? opfPath.slice(0, opfPath.lastIndexOf("/") + 1)
-          : "";
-        const manifest = new Map(
-          [...doc.getElementsByTagName("item")].map((n) => [
-            n.getAttribute("id"),
-            n.getAttribute("href"),
-          ]),
-        );
-        paths = [...doc.getElementsByTagName("itemref")]
-          .map((n) => folder + manifest.get(n.getAttribute("idref")))
-          .filter(Boolean);
-      } else
-        paths = Object.keys(zip.files)
-          .filter((p) => /\.(xhtml|html|htm)$/.test(p))
-          .sort();
-      for (const p of paths) {
-        const html = await zip
-          .file(decodeURIComponent(p.split("#")[0]))
-          ?.async("string");
-        if (!html) continue;
-        const doc = parser.parseFromString(html, "text/html");
-        parts.push(
-          ...[...doc.querySelectorAll("h1,h2,h3,p,li,blockquote")]
-            .map((p) => p.textContent?.trim() ?? "")
-            .filter(Boolean),
-        );
-      }
-    }
-    return {
-      text: parts.join("\n\n"),
-      pages: 0,
-      format: extension.toUpperCase(),
-    };
+    signal?.throwIfAborted();
+    if (extension === "epub") return readEpub(zip, parser, progress, signal);
+    const xml = await zip.file("word/document.xml")?.async("string");
+    if (!xml) throw new Error("Este DOCX não contém um documento legível.");
+    const doc = parser.parseFromString(xml, "application/xml");
+    const parts = [...doc.getElementsByTagName("w:p")]
+      .map((p) =>
+        [...p.getElementsByTagName("w:t")].map((t) => t.textContent).join(""),
+      )
+      .filter(Boolean);
+    return { text: parts.join("\n\n"), pages: 0, format: "DOCX" };
   }
   if (
     file.type.startsWith("text/") ||
@@ -168,3 +139,15 @@ export async function readFileText(
           : (extension?.toUpperCase() ?? "Arquivo"),
   };
 }
+export type FileReadResult = {
+  text: string;
+  pages: number;
+  paragraphs?: Paragraph[];
+  format: string;
+  title?: string;
+  author?: string;
+  language?: string;
+  publishedYear?: string;
+  cover?: Blob;
+  report?: ExtractionReport;
+};

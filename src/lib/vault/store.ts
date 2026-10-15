@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { freshVault } from "./seed";
 import { migrateVault } from "./migrate";
+import { reflowSource } from "../study/reflow";
+import type { FileReadResult } from "../study/import";
 import { id, now, nextReview, vaultSchema, mergeVault } from "./model";
 import type {
   VaultData,
@@ -45,6 +47,10 @@ type Actions = {
   setSettingsOpen: (open: boolean) => void;
   addSource: (s: Omit<Source, "id" | "createdAt" | "updatedAt">) => string;
   updateSource: (id: string, updates: Partial<Source>) => void;
+  reorganizeSource: (
+    id: string,
+    read: FileReadResult,
+  ) => { verified: number; unmatched: number };
   deleteSource: (id: string) => void;
   addNote: (n: Omit<Note, "id" | "createdAt" | "updatedAt">) => string;
   updateNote: (id: string, updates: Partial<Note>) => void;
@@ -187,6 +193,11 @@ const actions: Actions = {
         s.id === target ? { ...s, ...updates, id: s.id, updatedAt: now() } : s,
       ),
     }),
+  reorganizeSource: (target, read) => {
+    const { stats, ...changes } = reflowSource(snapshot(), target, read);
+    update({ ...changes, selection: null, readerNavigation: null });
+    return stats;
+  },
   deleteSource: (target) => {
     const noteIds = state.notes
       .filter((n) => n.fonte === target)
