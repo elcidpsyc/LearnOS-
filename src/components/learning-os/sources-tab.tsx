@@ -11,15 +11,27 @@ import {
   Trash2,
   Download,
   Cloud,
+  Folder,
+  ScanText,
 } from "lucide-react";
-import { motion } from "framer-motion";
-import { useVault } from "@/lib/vault/store";
+import { useVault, snapshot } from "@/lib/vault/store";
+import { exportNotebooks, readingContext } from "@/lib/study/reader";
+import { assist } from "@/lib/study/ai";
+import { DailyHighlights, BookmarkImport } from "./library-extras";
 import { getFile, download, removeFile } from "@/lib/vault/files";
 import type { Source } from "@/lib/vault/types";
 import { toast } from "sonner";
 import { AddSourceModal } from "./add-source-modal";
 import { GlossEditionModal } from "./gloss-edition-modal";
 import { Empty, Overline, Modal } from "./ui";
+import { SourceObject, FolderObject } from "./library-objects";
+import { ReorganizeSourceModal } from "./file-import-panel";
+const folderPath = (s: Source) =>
+  (s.folder ?? "")
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .join(" / ");
 export function SourcesTab() {
   const {
     sources,
@@ -34,8 +46,15 @@ export function SourcesTab() {
     settings,
     deleteSource,
     setSettingsOpen,
+    updateSource,
   } = useVault((s) => s);
-  const [view, setView] = useState<"shelf" | "topics" | "list">("shelf");
+  const [view, setView] = useState<
+    "shelf" | "covers" | "topics" | "folders" | "list"
+  >("covers");
+  const [reorganizing, setReorganizing] = useState<Source | null>(null);
+  const [folder, setFolder] = useState("");
+  const [bookmarks, setBookmarks] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [edition, setEdition] = useState(false);
@@ -53,19 +72,36 @@ export function SourcesTab() {
               (shelfFilter === "agent"
                 ? s.origin === "agent"
                 : s.topic === shelfFilter)) &&
-            `${s.title} ${s.author} ${s.topic}`
+            (!folder ||
+              folderPath(s) === folder ||
+              folderPath(s).startsWith(folder + " / ")) &&
+            `${s.title} ${s.author} ${s.topic} ${(s.tags ?? []).join(" ")} ${notes
+              .filter((n) => n.fonte === s.id)
+              .map((n) => `${n.title} ${n.content}`)
+              .join(" ")} ${marginNotes
+              .filter((m) => m.sourceId === s.id)
+              .map(
+                (m) =>
+                  `${m.quote ?? ""} ${m.content} ${m.conversation?.map((t) => t.content).join(" ") ?? ""}`,
+              )
+              .join(" ")}`
               .toLowerCase()
               .includes(query.toLowerCase()),
         )
         .sort((a, b) =>
-          shelfSort === "topic"
-            ? a.topic.localeCompare(b.topic) || a.title.localeCompare(b.title)
-            : shelfSort === "length"
-              ? parseInt(a.readTime) - parseInt(b.readTime)
-              : b.createdAt.localeCompare(a.createdAt) ||
-                a.title.localeCompare(b.title),
+          shelfSort === "color"
+            ? a.spineColor.localeCompare(b.spineColor)
+            : shelfSort === "reading"
+              ? (b.lastReadAt ?? "").localeCompare(a.lastReadAt ?? "")
+              : shelfSort === "topic"
+                ? a.topic.localeCompare(b.topic) ||
+                  a.title.localeCompare(b.title)
+                : shelfSort === "length"
+                  ? parseInt(a.readTime) - parseInt(b.readTime)
+                  : b.createdAt.localeCompare(a.createdAt) ||
+                    a.title.localeCompare(b.title),
         ),
-    [sources, shelfFilter, query, shelfSort],
+    [sources, notes, marginNotes, folder, shelfFilter, query, shelfSort],
   );
   const open = (s: Source) => {
     setActiveSourceId(s.id);
@@ -76,6 +112,24 @@ export function SourcesTab() {
     0,
   );
   const agentCount = sources.filter((s) => s.origin === "agent").length;
+  const recent = [...sources].sort((a, b) =>
+    (b.lastReadAt ?? b.createdAt).localeCompare(a.lastReadAt ?? a.createdAt),
+  );
+  const featured = recent[0];
+  const childFolders = [
+    ...new Set(
+      filtered
+        .map(folderPath)
+        .filter((p) => p && (!folder || p.startsWith(folder + " / ")))
+        .map((p) => {
+          const parts = p.split(" / ");
+          return parts
+            .slice(0, folder ? folder.split(" / ").length + 1 : 1)
+            .join(" / ");
+        }),
+    ),
+  ].sort();
+  const folderSources = filtered.filter((s) => folderPath(s) === folder);
   return (
     <div className="library-page">
       <div className="page-heading library-heading">
@@ -99,6 +153,9 @@ export function SourcesTab() {
           </p>
         </div>
         <div className="heading-actions">
+          <button className="button subtle" onClick={() => setBookmarks(true)}>
+            Bookmarks
+          </button>
           <button className="button subtle" onClick={() => setEdition(true)}>
             <Printer size={15} />
             <span>Minha edição</span>
@@ -109,6 +166,60 @@ export function SourcesTab() {
           </button>
         </div>
       </div>
+      <DailyHighlights />
+      {!!sources.length && (
+        <section
+          className="library-showcase"
+          aria-label="Em destaque na biblioteca"
+        >
+          <div className="showcase-copy">
+            <Overline>
+              {featured.lastReadAt
+                ? "CONTINUE SUA LEITURA"
+                : "SUA BIBLIOTECA, VIVA"}
+            </Overline>
+            <h2>Um mundo dentro de cada ideia.</h2>
+            <p>
+              {featured.lastReadAt
+                ? `Você parou em ${featured.progress}% de ${featured.title}.`
+                : `Comece por ${featured.title} e dê espaço às suas próximas conexões.`}
+            </p>
+            <button className="text-button" onClick={() => open(featured)}>
+              {featured.lastReadAt
+                ? "Continuar de onde parei"
+                : "Abrir este material"}
+              <ArrowUpRight size={14} />
+            </button>
+          </div>
+          <button
+            className="showcase-volume"
+            aria-label={`Abrir destaque: ${featured.title}`}
+            onClick={() => open(featured)}
+          >
+            <SourceObject source={featured} />
+          </button>
+          <div className="showcase-recent">
+            <Overline>À MÃO, PARA EXPLORAR</Overline>
+            {recent.slice(1, 4).map((s) => (
+              <button key={s.id} onClick={() => open(s)}>
+                <i style={{ background: s.spineColor }} />
+                <span>
+                  <strong>{s.title}</strong>
+                  <small>
+                    {s.format} ·{" "}
+                    {s.progress ? `${s.progress}% lido` : s.readTime}
+                  </small>
+                </span>
+              </button>
+            ))}
+            {recent.length === 1 && (
+              <p className="form-intro">
+                Sua próxima descoberta começa com uma nova fonte.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
       {agentCount > 0 && (
         <button
           className="agent-notice"
@@ -129,6 +240,19 @@ export function SourcesTab() {
           >
             <Library size={14} />
             Estante
+          </button>
+          <button
+            className={view === "covers" ? "active" : ""}
+            onClick={() => setView("covers")}
+          >
+            Capas
+          </button>
+          <button
+            className={view === "folders" ? "active" : ""}
+            onClick={() => setView("folders")}
+          >
+            <Folder size={14} />
+            Pastas
           </button>
           <button
             className={view === "topics" ? "active" : ""}
@@ -164,9 +288,34 @@ export function SourcesTab() {
             <option value="recent">Recentes</option>
             <option value="topic">Tema</option>
             <option value="length">Tempo de leitura</option>
+            <option value="color">Cor</option>
+            <option value="reading">Última leitura</option>
           </select>
         </label>
       </div>
+      {sources.some((s) => s.folder) && (
+        <div className="folder-filters" aria-label="Pastas">
+          <button
+            className={!folder ? "active" : ""}
+            onClick={() => setFolder("")}
+          >
+            Todas as pastas
+          </button>
+          {[...new Set(sources.map((s) => s.folder).filter(Boolean))].map(
+            (f) => (
+              <button
+                className={folder === f ? "active" : ""}
+                key={f}
+                onClick={() => setFolder(f!)}
+              >
+                <span className="folder-shape" />
+                {f}
+                <small>{sources.filter((s) => s.folder === f).length}</small>
+              </button>
+            ),
+          )}
+        </div>
+      )}
       <div className="topic-filters">
         <button
           className={shelfFilter === "all" ? "active" : ""}
@@ -198,6 +347,32 @@ export function SourcesTab() {
           </button>
         )}
       </div>
+      {view === "folders" && (
+        <nav className="folder-breadcrumb" aria-label="Caminho da pasta">
+          <button onClick={() => setFolder("")}>Biblioteca</button>
+          {folder
+            .split(" / ")
+            .filter(Boolean)
+            .map((part, i) => (
+              <span key={i}>
+                {" "}
+                /{" "}
+                <button
+                  onClick={() =>
+                    setFolder(
+                      folder
+                        .split(" / ")
+                        .slice(0, i + 1)
+                        .join(" / "),
+                    )
+                  }
+                >
+                  {part}
+                </button>
+              </span>
+            ))}
+        </nav>
+      )}
       {filtered.length === 0 ? (
         <Empty
           title="Um espaço para a próxima leitura."
@@ -213,117 +388,71 @@ export function SourcesTab() {
         <>
           <section className="bookshelf" aria-label="Estante de fontes">
             <div className="shelf-books">
-              {filtered.map((s, i) => (
+              {filtered.map((s) => (
                 <div className="book-item" key={s.id}>
-                  <motion.button
-                    className="book-spine"
-                    onClick={() => open(s)}
-                    whileHover={{ y: -12, rotate: -1.5 }}
-                    whileTap={{ scale: 0.98 }}
+                  <button
+                    className="shelf-object-open"
                     aria-label={`Ler ${s.title}`}
-                    style={{
-                      height: s.spineHeight + 36,
-                      width: s.spineWidth + 10,
-                      background: s.spineColor,
-                      color: s.spineTextColor,
-                    }}
+                    onClick={() => open(s)}
                   >
-                    <span className="spine-edge" />
-                    <span className="spine-emblem">
-                      {s.format === "PDF"
-                        ? "¶"
-                        : s.format === "EPUB"
-                          ? "❧"
-                          : "✦"}
-                    </span>
-                    <span className="spine-title">{s.title}</span>
-                    <span className="spine-author">
-                      {s.author.split(",")[0].split(" ").at(-1)}
-                    </span>
-                    <span
-                      className="book-progress"
-                      style={{ height: `${s.progress}%` }}
-                    />
-                  </motion.button>
-                  <div className="book-preview">
-                    <span>{s.topic}</span>
-                    <strong>{s.title}</strong>
-                    <small>
-                      {s.author} · {s.readTime}
-                    </small>
-                    <button onClick={() => setDetails(s)}>
-                      Detalhes da fonte
-                    </button>
-                  </div>
+                    <SourceObject source={s} spine />
+                  </button>
+                  <button className="book-name" onClick={() => open(s)}>
+                    {s.title}
+                  </button>
+                  <small className="spine-meta">
+                    {s.format} · {s.progress}% lido
+                  </small>
+                  <button
+                    className="shelf-detail"
+                    onClick={() => setDetails(s)}
+                  >
+                    Detalhes
+                  </button>
                 </div>
               ))}
             </div>
             <div className="shelf-ledge" />
           </section>
           <div className="shelf-caption">
-            <span>Escolha uma lombada. Cada leitura abre uma nova margem.</span>
             <span>
-              {filtered.length} {filtered.length === 1 ? "fonte" : "fontes"}{" "}
-              nesta estante
+              Livros, documentos e ideias. Cada material, um novo universo.
             </span>
+            <span>{filtered.length} fontes nesta estante</span>
           </div>
         </>
       ) : view === "topics" ? (
-        <div className="topic-grid">
+        <div className="folder-grid">
           {[...new Set(filtered.map((s) => s.topic))].map((t) => {
             const collection = filtered.filter((s) => s.topic === t);
             return (
               <button
                 key={t}
-                className="topic-card"
+                className="folder-card"
                 onClick={() => {
                   setShelfFilter(t);
-                  setView("shelf");
+                  setView("covers");
                 }}
               >
-                <div
-                  className="topic-art"
-                  style={{ color: collection[0].spineColor }}
-                >
-                  <BookOpen size={76} strokeWidth={0.75} />
-                  <div className="mini-shelf">
-                    {collection.map((s) => (
-                      <i
-                        key={s.id}
-                        style={{
-                          height: s.spineHeight / 4,
-                          background: s.spineColor,
-                          width: s.spineWidth / 3,
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <span className="topic-card-caption">
-                  <strong>{t}</strong>
-                  <small>
-                    {collection.length} fontes ·{" "}
-                    {collection.reduce(
-                      (n, s) => n + (parseInt(s.readTime) || 0),
-                      0,
-                    )}{" "}
-                    min
-                  </small>
-                  <ArrowUpRight size={16} />
-                </span>
+                <FolderObject
+                  title={t}
+                  count={collection.length}
+                  sources={collection}
+                />
+                <strong>{t}</strong>
+                <small>Coleção por tema · {collection.length} fontes</small>
               </button>
             );
           })}
         </div>
-      ) : (
+      ) : view === "list" ? (
         <div className="source-table">
           {filtered.map((s) => (
             <div key={s.id} className="source-row">
               <button className="source-row-main" onClick={() => open(s)}>
-                <span
-                  className="source-mini-book"
-                  style={{ background: s.spineColor }}
-                />
+                <span className="source-mini-object">
+                  <SourceObject source={s} />
+                </span>
                 <span>
                   <strong>{s.title}</strong>
                   <small>
@@ -343,6 +472,47 @@ export function SourcesTab() {
             </div>
           ))}
         </div>
+      ) : (
+        <>
+          {view === "folders" && (
+            <>
+              <div className="folder-grid">
+                {childFolders.map((path) => {
+                  const collection = filtered.filter(
+                    (s) =>
+                      folderPath(s) === path ||
+                      folderPath(s).startsWith(path + " / "),
+                  );
+                  return (
+                    <button
+                      className="folder-card"
+                      key={path}
+                      onClick={() => setFolder(path)}
+                    >
+                      <FolderObject
+                        title={path.split(" / ").at(-1)!}
+                        count={collection.length}
+                        sources={collection}
+                      />
+                      <strong>{path.split(" / ").at(-1)}</strong>
+                      <small>{collection.length} materiais · Abrir pasta</small>
+                    </button>
+                  );
+                })}
+              </div>
+              {!folder && (
+                <p className="folder-unfiled">
+                  Materiais sem pasta · Organize nas opções de cada fonte.
+                </p>
+              )}
+            </>
+          )}
+          <SourceCoverGrid
+            sources={view === "folders" ? folderSources : filtered}
+            open={open}
+            details={setDetails}
+          />
+        </>
       )}
       <div className="library-bottom">
         <div className="library-bottom-copy">
@@ -351,6 +521,17 @@ export function SourcesTab() {
             {notes.length} notas e {marginNotes.length} marcações guardadas.
             <br />O que você leu pode continuar conversando com você.
           </p>
+          <button
+            className="text-button"
+            onClick={() =>
+              void exportNotebooks(snapshot()).catch(() =>
+                toast.error("Não foi possível exportar os cadernos."),
+              )
+            }
+          >
+            <Download size={14} />
+            Exportar todos os cadernos
+          </button>
         </div>
         <button
           className="library-connect"
@@ -364,7 +545,14 @@ export function SourcesTab() {
           <ArrowUpRight size={18} />
         </button>
       </div>
+      {reorganizing && (
+        <ReorganizeSourceModal
+          source={reorganizing}
+          close={() => setReorganizing(null)}
+        />
+      )}
       {adding && <AddSourceModal onClose={() => setAdding(false)} />}{" "}
+      {bookmarks && <BookmarkImport close={() => setBookmarks(false)} />}
       {edition && <GlossEditionModal onClose={() => setEdition(false)} />}
       {details && (
         <Modal title="Sobre esta fonte" close={() => setDetails(null)}>
@@ -374,6 +562,120 @@ export function SourcesTab() {
               {details.origin === "example" ? "EXEMPLO" : details.topic}
             </Overline>
             <h3>{details.title}</h3>
+            <label className="field">
+              Título
+              <input
+                value={details.title}
+                onChange={(e) =>
+                  setDetails({ ...details, title: e.target.value })
+                }
+              />
+            </label>
+            <div className="field-row">
+              <label className="field">
+                Tema
+                <input
+                  value={details.topic}
+                  onChange={(e) =>
+                    setDetails({ ...details, topic: e.target.value })
+                  }
+                />
+              </label>
+              <label className="field">
+                Pasta
+                <input
+                  value={details.folder ?? ""}
+                  onChange={(e) =>
+                    setDetails({ ...details, folder: e.target.value })
+                  }
+                  placeholder="Ex.: Psicologia / História"
+                />
+              </label>
+            </div>
+            <label className="field">
+              Tags, separadas por vírgula
+              <input
+                value={(details.tags ?? []).join(", ")}
+                onChange={(e) =>
+                  setDetails({
+                    ...details,
+                    tags: e.target.value.split(",").map((t) => t.trim()),
+                  })
+                }
+              />
+            </label>
+            <label className="field">
+              Cor da capa
+              <input
+                type="color"
+                value={details.spineColor}
+                onChange={(e) =>
+                  setDetails({ ...details, spineColor: e.target.value })
+                }
+              />
+            </label>
+            {details.fileId && /^(PDF|EPUB|DOCX)$/i.test(details.format) && (
+              <button
+                className="button"
+                onClick={() => {
+                  setReorganizing(details);
+                  setDetails(null);
+                }}
+              >
+                <ScanText size={15} />
+                Organizar texto do material
+              </button>
+            )}
+            <div className="button-row">
+              <button
+                className="button"
+                disabled={!details.title.trim()}
+                onClick={() => {
+                  updateSource(details.id, {
+                    title: details.title.trim(),
+                    topic: details.topic.trim() || "Sem categoria",
+                    folder: details.folder?.trim(),
+                    tags: details.tags?.filter(Boolean),
+                    spineColor: details.spineColor,
+                  });
+                  toast.success("Organização salva.");
+                  setDetails(null);
+                }}
+              >
+                Salvar organização
+              </button>
+              <button
+                className="button subtle"
+                disabled={suggesting || !details.paragraphs.length}
+                onClick={async () => {
+                  setSuggesting(true);
+                  try {
+                    const result = await assist(
+                      "classify",
+                      "Sugira um tema e tags para organizar este material.",
+                      readingContext(details, [], 20000).text,
+                      details.title,
+                    );
+                    if (result.classification)
+                      setDetails((previous) =>
+                        previous?.id === details.id
+                          ? { ...previous, ...result.classification }
+                          : previous,
+                      );
+                  } catch (e) {
+                    toast.error(
+                      e instanceof Error
+                        ? e.message
+                        : "A sugestão não ficou disponível.",
+                    );
+                  } finally {
+                    setSuggesting(false);
+                  }
+                }}
+              >
+                {suggesting ? "Pensando…" : "Sugerir organização"}
+              </button>
+            </div>
             <p>
               {details.author}
               {details.publishedYear ? ` · ${details.publishedYear}` : ""}
@@ -442,6 +744,54 @@ export function SourcesTab() {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+function SourceCoverGrid({
+  sources,
+  open,
+  details,
+}: {
+  sources: Source[];
+  open: (source: Source) => void;
+  details: (source: Source) => void;
+}) {
+  return (
+    <div className="cover-grid">
+      {sources.map((s) => (
+        <article key={s.id} className="cover-item">
+          <button
+            className="object-open"
+            aria-label={`Ler ${s.title}`}
+            onClick={() => open(s)}
+          >
+            <SourceObject source={s} />
+          </button>
+          <div className="object-caption">
+            <div className="object-caption-top">
+              <small>
+                {s.format} · {s.topic}
+              </small>
+              <button
+                className="icon-button"
+                aria-label={`Detalhes de ${s.title}`}
+                onClick={() => details(s)}
+              >
+                <MoreHorizontal size={16} />
+              </button>
+            </div>
+            <button className="object-title" onClick={() => open(s)}>
+              {s.title}
+            </button>
+            <small>{s.author}</small>
+            <small>{s.progress ? `${s.progress}% lido` : s.readTime}</small>
+            <span className="object-reading">
+              <i style={{ width: `${s.progress}%` }} />
+            </span>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }

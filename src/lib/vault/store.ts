@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { freshVault } from "./seed";
 import { migrateVault } from "./migrate";
+import { reflowSource } from "../study/reflow";
+import type { FileReadResult } from "../study/import";
 import { id, now, nextReview, vaultSchema, mergeVault } from "./model";
 import type {
   VaultData,
@@ -16,11 +18,16 @@ import type {
 export type * from "./types";
 export const STORAGE_KEY = "learning_os_v2";
 type Runtime = {
+  readerNavigation: {
+    sourceId: string;
+    paragraphId: number;
+    requestId: string;
+  } | null;
   hydrated: boolean;
   tab: TabId;
   selectedNoteId: string | null;
   shelfFilter: string;
-  shelfSort: "topic" | "recent" | "length";
+  shelfSort: "topic" | "recent" | "length" | "color" | "reading";
   selection: Selection | null;
   storageError: string;
   cloudStatus: "local" | "saving" | "synced" | "error";
@@ -29,6 +36,7 @@ type Runtime = {
   settingsOpen: boolean;
 };
 type Actions = {
+  navigateToParagraph: (sourceId: string, paragraphId: number) => void;
   setTab: (tab: TabId) => void;
   setActiveSourceId: (id: string) => void;
   selectNote: (id: string | null) => void;
@@ -39,6 +47,10 @@ type Actions = {
   setSettingsOpen: (open: boolean) => void;
   addSource: (s: Omit<Source, "id" | "createdAt" | "updatedAt">) => string;
   updateSource: (id: string, updates: Partial<Source>) => void;
+  reorganizeSource: (
+    id: string,
+    read: FileReadResult,
+  ) => { verified: number; unmatched: number };
   deleteSource: (id: string) => void;
   addNote: (n: Omit<Note, "id" | "createdAt" | "updatedAt">) => string;
   updateNote: (id: string, updates: Partial<Note>) => void;
@@ -54,6 +66,7 @@ type Actions = {
     n: Omit<MarginNote, "id" | "createdAt" | "updatedAt">,
   ) => string;
   deleteMarginNote: (id: string) => void;
+  updateMarginNote: (id: string, updates: Partial<MarginNote>) => void;
   addRelation: (r: Omit<Relation, "id" | "createdAt" | "updatedAt">) => void;
   deleteRelation: (id: string) => void;
   replaceVault: (d: VaultData) => void;
@@ -132,13 +145,32 @@ function remove(
   } as Partial<State>);
 }
 const actions: Actions = {
+  navigateToParagraph: (sourceId, paragraphId) => {
+    const source = state.sources.find((s) => s.id === sourceId);
+    if (
+      !source ||
+      (paragraphId && !source.paragraphs.some((p) => p.id === paragraphId))
+    )
+      return;
+    update({
+      activeSourceId: sourceId,
+      tab: "estudar",
+      selection: null,
+      readerNavigation: { sourceId, paragraphId, requestId: id() },
+      sources: state.sources.map((s) =>
+        s.id === sourceId && paragraphId
+          ? { ...s, lastParagraph: paragraphId, updatedAt: now() }
+          : s,
+      ),
+    });
+  },
   setTab: (tab) => {
-    update({ tab, selection: null }, false);
+    update({ tab, selection: null, readerNavigation: null }, false);
     if (typeof window !== "undefined")
       window.scrollTo({ top: 0, behavior: "instant" });
   },
   setActiveSourceId: (activeSourceId) =>
-    update({ activeSourceId, selection: null }),
+    update({ activeSourceId, selection: null, readerNavigation: null }),
   selectNote: (selectedNoteId) => update({ selectedNoteId }, false),
   setShelfFilter: (shelfFilter) => update({ shelfFilter }, false),
   setShelfSort: (shelfSort) => update({ shelfSort }, false),
@@ -161,6 +193,11 @@ const actions: Actions = {
         s.id === target ? { ...s, ...updates, id: s.id, updatedAt: now() } : s,
       ),
     }),
+  reorganizeSource: (target, read) => {
+    const { stats, ...changes } = reflowSource(snapshot(), target, read);
+    update({ ...changes, selection: null, readerNavigation: null });
+    return stats;
+  },
   deleteSource: (target) => {
     const noteIds = state.notes
       .filter((n) => n.fonte === target)
@@ -189,8 +226,22 @@ const actions: Actions = {
       notes: state.notes.map((n) =>
         n.id === target ? { ...n, ...updates, id: n.id, updatedAt: now() } : n,
       ),
+      marginNotes: state.marginNotes.map((m) =>
+        m.noteId === target
+          ? {
+              ...m,
+              ...(updates.content !== undefined
+                ? { content: updates.content }
+                : {}),
+              ...(updates.title !== undefined ? { title: updates.title } : {}),
+              updatedAt: now(),
+            }
+          : m,
+      ),
     }),
   deleteNote: (target) => {
+    for (const m of state.marginNotes.filter((m) => m.noteId === target))
+      remove("marginNotes", m.id);
     for (const r of state.relations.filter(
       (r) => r.from === target || r.to === target,
     ))
@@ -246,7 +297,18 @@ const actions: Actions = {
     update({ marginNotes: [...state.marginNotes, mark] });
     return mark.id;
   },
-  deleteMarginNote: (target) => remove("marginNotes", target),
+  updateMarginNote: (target, updates) =>
+    update({
+      marginNotes: state.marginNotes.map((m) =>
+        m.id === target ? { ...m, ...updates, id: m.id, updatedAt: now() } : m,
+      ),
+    }),
+  deleteMarginNote: (target) => {
+    const linked = state.marginNotes.find((m) => m.id === target)?.noteId;
+    remove("marginNotes", target);
+    if (linked && !state.marginNotes.some((m) => m.noteId === linked))
+      actions.deleteNote(linked);
+  },
   addRelation: (r) =>
     update({
       relations: [
@@ -391,6 +453,7 @@ state = {
   hydrated: false,
   tab: "fontes",
   selectedNoteId: null,
+  readerNavigation: null,
   shelfFilter: "all",
   shelfSort: "recent",
   selection: null,

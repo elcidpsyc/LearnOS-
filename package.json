@@ -6,13 +6,17 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 3000",
     "build": "tsc --noEmit && vite build",
+    "check:api": "tsc --noEmit -p api/tsconfig.json",
+    "verify": "npm test && npm run check:api && npm run build",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/literata": "^5.3.0",
     "@fontsource-variable/newsreader": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
     "@mozilla/readability": "^0.6.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vercel/blob": "2.8.1",

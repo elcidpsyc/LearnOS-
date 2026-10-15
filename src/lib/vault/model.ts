@@ -17,6 +17,11 @@ export const DEFAULT_SETTINGS: Settings = {
   cloudEnabled: false,
   cloudToken: "",
   model: "openai",
+  minimap: true,
+  answerLength: "balanced",
+  answerDepth: "quick",
+  webSearch: false,
+  speechRate: 0.9,
 };
 const text = z.string();
 const entity = { id: text.min(1), createdAt: text, updatedAt: text };
@@ -36,7 +41,21 @@ const source = z.object({
       id: z.number(),
       text,
       page: text.optional(),
+      pageEnd: text.optional(),
+      section: text.optional(),
       firstLetterDrop: z.boolean().optional(),
+      kind: z
+        .enum([
+          "paragraph",
+          "heading",
+          "quote",
+          "list",
+          "code",
+          "table",
+          "image",
+        ])
+        .optional(),
+      href: text.optional(),
     }),
   ),
   spineColor: text,
@@ -55,8 +74,46 @@ const source = z.object({
   lastReadAt: text.optional(),
   lastParagraph: z.number().optional(),
   agentName: text.optional(),
+  tags: z.array(text).optional(),
+  folder: text.optional(),
+  coverUrl: text.optional(),
+  coverImage: text
+    .max(150000)
+    .regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/)
+    .optional(),
+  language: text.optional(),
+  contentRevision: z.number().int().nonnegative().optional(),
+  extraction: z
+    .object({
+      engine: z.literal("layout-v2"),
+      options: z.object({
+        columns: z.enum(["auto", "single", "double"]),
+        joinLines: z.boolean(),
+        removeHeaders: z.boolean(),
+        joinHyphens: z.boolean(),
+      }),
+      warnings: z.array(text),
+      emptyPages: z.array(z.number()),
+      removedHeaders: z.number(),
+      columnPages: z.number(),
+      chapterCount: z.number(),
+      generatedAt: text,
+    })
+    .optional(),
+  overview: z
+    .object({
+      summary: text,
+      claims: z.array(z.object({ text, paragraphs: z.array(z.number()) })),
+      sections: z.array(
+        z.object({ title: text, start: z.number(), end: z.number() }),
+      ),
+      generatedAt: text,
+      model: text.optional(),
+    })
+    .optional(),
 });
 const note = z.object({
+  anchorStatus: z.enum(["verified", "unmatched"]).optional(),
   ...entity,
   title: text,
   content: text,
@@ -72,6 +129,7 @@ const note = z.object({
   highlights: z.array(text).optional(),
 });
 const card = z.object({
+  anchorStatus: z.enum(["verified", "unmatched"]).optional(),
   ...entity,
   frente: text,
   verso: text,
@@ -87,6 +145,7 @@ const card = z.object({
   interval: z.number(),
 });
 const margin = z.object({
+  anchorStatus: z.enum(["verified", "unmatched"]).optional(),
   ...entity,
   sourceId: text,
   paragraphId: z.number(),
@@ -100,6 +159,36 @@ const margin = z.object({
   reminder: text.optional(),
   noteId: text.optional(),
   page: text.optional(),
+  anchors: z
+    .array(
+      z.object({
+        paragraphId: z.number(),
+        start: z.number().int().nonnegative(),
+        end: z.number().int().nonnegative(),
+        quote: text,
+        page: text.optional(),
+      }),
+    )
+    .optional(),
+  conversation: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: text,
+        createdAt: text,
+        model: text.optional(),
+        references: z.array(z.object({ title: text, url: text })).optional(),
+      }),
+    )
+    .optional(),
+  model: text.optional(),
+  action: text.optional(),
+  references: z.array(z.object({ title: text, url: text })).optional(),
+  reviewDate: text.optional(),
+  reviewInterval: z.number().optional(),
+  reviewCount: z.number().optional(),
+  reviewAnswer: text.optional(),
+  comparisonSourceId: text.optional(),
 });
 const relation = z.object({
   ...entity,
@@ -110,8 +199,8 @@ const relation = z.object({
   citation: text.optional(),
 });
 const settings = z.object({
-  theme: z.enum(["paper", "sepia", "night"]),
-  font: z.enum(["serif", "sans"]),
+  theme: z.enum(["auto", "paper", "sepia", "snow", "night", "ink"]),
+  font: z.enum(["serif", "book", "sans", "legible"]),
   fontSize: z.number().min(14).max(28),
   lineHeight: z.number().min(1.3).max(2.4),
   width: z.number().min(440).max(820),
@@ -125,6 +214,11 @@ const settings = z.object({
   cloudEnabled: z.boolean(),
   cloudToken: text,
   model: z.enum(["openai", "anthropic", "grok"]),
+  minimap: z.boolean().default(true),
+  answerLength: z.enum(["short", "balanced", "detailed"]).default("balanced"),
+  answerDepth: z.enum(["quick", "deep"]).default("quick"),
+  webSearch: z.boolean().default(false),
+  speechRate: z.number().min(0.5).max(2).default(0.9),
 });
 export const vaultSchema = z.object({
   version: z.literal(2),

@@ -41,6 +41,7 @@ const MapTab = lazy(() =>
 );
 import { WorkspaceSettings } from "./settings";
 import { Modal } from "./ui";
+import { AddSourceModal } from "./add-source-modal";
 const tabs = [
   { id: "fontes", label: "Biblioteca", icon: Library },
   { id: "estudar", label: "Ler", icon: BookOpen },
@@ -61,19 +62,60 @@ export function LearningOS() {
     storageError,
     sources,
     notes,
+    marginNotes,
     setActiveSourceId,
+    navigateToParagraph,
     selectNote,
   } = useVault((s) => s);
   const [search, setSearch] = useState(false);
   const [query, setQuery] = useState("");
+  const [incoming, setIncoming] = useState<{
+    text?: string;
+    url?: string;
+  } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const url = params.get("url") ?? params.get("save");
+    if (url && /^https?:\/\//i.test(url)) {
+      setIncoming({ url });
+      history.replaceState(null, "", location.pathname);
+    }
+    const paste = (e: ClipboardEvent) => {
+      if (
+        (e.target as Element)?.closest(
+          "input,textarea,select,[contenteditable],dialog",
+        )
+      )
+        return;
+      const value = e.clipboardData?.getData("text/plain").trim();
+      if (!value) return;
+      e.preventDefault();
+      setIncoming(
+        /^https?:\/\/\S+$/i.test(value) ? { url: value } : { text: value },
+      );
+    };
+    document.addEventListener("paste", paste);
+    return () => document.removeEventListener("paste", paste);
+  }, []);
   useEffect(() => hydrateVault(), []);
   useEffect(() => {
-    document.documentElement.dataset.theme = settings.theme;
+    const system = matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      document.documentElement.dataset.theme =
+        settings.theme === "auto"
+          ? system.matches
+            ? "night"
+            : "paper"
+          : settings.theme;
+    };
+    apply();
+    system.addEventListener("change", apply);
     document.documentElement.style.setProperty("--pen", settings.penColor);
     document.documentElement.style.setProperty(
       "--highlight",
       settings.highlightColor,
     );
+    return () => system.removeEventListener("change", apply);
   }, [settings.theme, settings.penColor, settings.highlightColor]);
   useEffect(() => {
     const open = (e: KeyboardEvent) => {
@@ -189,6 +231,13 @@ export function LearningOS() {
           ))}
         </nav>
         {settingsOpen && <WorkspaceSettings />}
+        {incoming && (
+          <AddSourceModal
+            initialText={incoming.text}
+            initialUrl={incoming.url}
+            onClose={() => setIncoming(null)}
+          />
+        )}
         {search && (
           <Modal title="Buscar no caderno" close={() => setSearch(false)}>
             <label className="field">
@@ -247,6 +296,32 @@ export function LearningOS() {
                         </span>
                       </button>
                     ))}
+                  {marginNotes
+                    .filter((m) =>
+                      `${m.quote ?? ""} ${m.content} ${m.title} ${m.conversation?.map((t) => t.content).join(" ") ?? ""}`
+                        .toLocaleLowerCase()
+                        .includes(query.toLocaleLowerCase()),
+                    )
+                    .map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          navigateToParagraph(m.sourceId, m.paragraphId);
+                          setSearch(false);
+                        }}
+                      >
+                        <NotebookPen size={16} />
+                        <span>
+                          {m.quote?.slice(0, 100) || m.title}
+                          <small>
+                            {sources.find((s) => s.id === m.sourceId)?.title} ·{" "}
+                            {m.type === "highlight"
+                              ? "Destaque"
+                              : "Conversa / nota"}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
                 </>
               )}
             </div>
@@ -254,7 +329,13 @@ export function LearningOS() {
         )}
         <Toaster
           position="bottom-right"
-          theme={settings.theme === "night" ? "dark" : "light"}
+          theme={
+            settings.theme === "auto"
+              ? "system"
+              : ["night", "ink"].includes(settings.theme)
+                ? "dark"
+                : "light"
+          }
         />
       </div>
     </MotionConfig>

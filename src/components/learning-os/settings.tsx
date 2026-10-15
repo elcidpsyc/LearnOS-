@@ -16,6 +16,7 @@ import { snapshot, useVault } from "@/lib/vault/store";
 import { createBackup, readBackup } from "@/lib/vault/files";
 import type { VaultData } from "@/lib/vault/types";
 import { Modal, Overline } from "./ui";
+import { AssistantStatus } from "./assistant-status";
 export function WorkspaceSettings() {
   const {
     settings,
@@ -144,6 +145,13 @@ export function WorkspaceSettings() {
             Uma chave privada conecta seus aparelhos ao mesmo caderno. Guarde a
             chave; ela permite acessar e modificar o espaço.
           </p>
+          {!settings.cloudEnabled && (
+            <p>
+              Ao conectar, seus materiais e anotações são sincronizados no seu
+              espaço privado. Depois, você pode pedir ajuda à IA sobre o trecho
+              escolhido.
+            </p>
+          )}
           {settings.cloudEnabled ? (
             <>
               <div className="cloud-status">
@@ -258,6 +266,7 @@ export function WorkspaceSettings() {
             A IA usa somente o contexto enviado quando você pede uma resposta. O
             acervo local funciona sem IA.
           </p>
+          <AssistantStatus />
         </section>
       </div>
     </Modal>

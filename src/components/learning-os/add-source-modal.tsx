@@ -1,32 +1,45 @@
 import { useState, useRef } from "react";
-import { Link, AlignLeft, Upload, ArrowRight, Check } from "lucide-react";
+import { Link, AlignLeft, Upload, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useVault, snapshot } from "@/lib/vault/store";
-import { saveFile } from "@/lib/vault/files";
-import { sourceDraft, readFileText, importLink } from "@/lib/study/import";
+import { sourceDraft, importLink } from "@/lib/study/import";
 import { Modal } from "./ui";
-export function AddSourceModal({ onClose }: { onClose: () => void }) {
+import { FileImportPanel } from "./file-import-panel";
+export function AddSourceModal({
+  onClose,
+  initialText = "",
+  initialUrl = "",
+}: {
+  onClose: () => void;
+  initialText?: string;
+  initialUrl?: string;
+}) {
   const addSource = useVault((s) => s.addSource);
   const setActiveSourceId = useVault((s) => s.setActiveSourceId);
   const setTab = useVault((s) => s.setTab);
-  const [mode, setMode] = useState<"link" | "text" | "file">("text");
+  const [mode, setMode] = useState<"link" | "text" | "file">(
+    initialUrl ? "link" : "text",
+  );
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [topic, setTopic] = useState("Psicologia");
-  const [url, setUrl] = useState("");
-  const [text, setText] = useState("");
+  const [url, setUrl] = useState(initialUrl);
+  const [text, setText] = useState(initialText);
+  const [folder, setFolder] = useState("");
+  const [readNow, setReadNow] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [queue, setQueue] = useState<File[]>([]);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const finish = (target: string) => {
     setActiveSourceId(target);
-    setTab("estudar");
+    setTab(readNow ? "estudar" : "fontes");
     onClose();
     toast.success("Fonte adicionada à sua biblioteca.");
   };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mode === "file") return;
     setBusy(true);
     setError("");
     try {
@@ -40,6 +53,7 @@ export function AddSourceModal({ onClose }: { onClose: () => void }) {
               topic,
             );
       if (mode === "text") draft.excerptOnly = true;
+      draft.folder = folder.trim();
       const target = addSource(draft);
       finish(target);
     } catch (e) {
@@ -48,55 +62,16 @@ export function AddSourceModal({ onClose }: { onClose: () => void }) {
       setBusy(false);
     }
   };
-  const files = async (selected: FileList | null) => {
-    if (!selected) return;
-    setBusy(true);
-    setError("");
-    try {
-      let last = "";
-      for (const file of Array.from(selected)) {
-        if (file.size > 120 * 1024 * 1024)
-          throw new Error("Importe arquivos de até 120 MB.");
-        const exists = snapshot().sources.find(
-          (s) => s.fileName === file.name && s.size === file.size,
-        );
-        if (exists) {
-          last = exists.id;
-          continue;
-        }
-        setMessage(`Abrindo ${file.name}…`);
-        const read = await readFileText(file, setMessage);
-        const fileId = crypto.randomUUID();
-        await saveFile(fileId, file);
-        const draft = {
-          ...sourceDraft(
-            file.name.replace(/\.[^.]+$/, ""),
-            read.text,
-            "Arquivo pessoal",
-            topic,
-          ),
-          paragraphs: read.paragraphs ?? sourceDraft("", read.text).paragraphs,
-          pages: read.pages,
-          format: read.format,
-          origin: "file" as const,
-          fileId,
-          fileName: file.name,
-          mime: file.type || "application/octet-stream",
-          size: file.size,
-        };
-        last = addSource(draft);
-      }
-      if (last) finish(last);
-    } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Não foi possível ler este arquivo.",
-      );
-    } finally {
-      setBusy(false);
-    }
+  const files = (selected: FileList | null) => {
+    if (selected?.length) setQueue(Array.from(selected));
   };
   return (
-    <Modal title="Adicionar à biblioteca" close={onClose}>
+    <Modal
+      title="Adicionar à biblioteca"
+      close={onClose}
+      wide={mode === "file" && !!queue.length}
+      className="import-modal"
+    >
       <div className="segmented import-tabs">
         {[
           { id: "link", label: "Link", icon: Link },
@@ -181,7 +156,7 @@ export function AddSourceModal({ onClose }: { onClose: () => void }) {
               disabled={busy}
               onClick={() => fileRef.current?.click()}
             >
-              {busy ? message : "Escolher arquivos"}
+              Escolher arquivos
             </button>
             <small>
               Até 120 MB por arquivo. PDFs escaneados podem não ter texto
@@ -211,14 +186,66 @@ export function AddSourceModal({ onClose }: { onClose: () => void }) {
             <option>Escrita</option>
           </datalist>
         </label>
+        <label className="field">
+          Pasta
+          <input
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
+            placeholder="Opcional, ex.: Psicologia / História"
+          />
+        </label>
+        <label className="toggle-field">
+          <input
+            type="checkbox"
+            checked={readNow}
+            onChange={(e) => setReadNow(e.target.checked)}
+          />
+          Abrir para ler ao terminar
+        </label>
         {error && (
           <p className="inline-error" role="alert">
             {error}
           </p>
         )}
+        {mode === "file" && queue[0] && (
+          <>
+            <p className="form-intro">
+              {queue.length} arquivo(s) na fila. Confira cada material antes de
+              guardar.
+            </p>
+            <FileImportPanel
+              key={queue[0].name + queue[0].size}
+              file={queue[0]}
+              existing={snapshot().sources.find(
+                (s) => s.fileName === queue[0].name && s.size === queue[0].size,
+              )}
+              topic={topic}
+              folder={folder}
+              onSaved={(target) => {
+                if (queue.length > 1) setQueue((q) => q.slice(1));
+                else {
+                  setActiveSourceId(target);
+                  setTab(readNow ? "estudar" : "fontes");
+                  onClose();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setQueue((q) => q.slice(1))}
+            >
+              Retirar este arquivo da fila
+            </button>
+          </>
+        )}
         {mode !== "file" && (
           <button className="button primary" disabled={busy}>
-            {busy ? "Importando…" : "Guardar e começar a ler"}
+            {busy
+              ? "Importando…"
+              : readNow
+                ? "Guardar e começar a ler"
+                : "Guardar na biblioteca"}
             <ArrowRight size={16} />
           </button>
         )}

@@ -1,10 +1,30 @@
 export type TabId = "estudar" | "fontes" | "notas" | "revisar" | "mapa";
-export type Theme = "paper" | "sepia" | "night";
+export type Theme = "auto" | "paper" | "sepia" | "snow" | "night" | "ink";
+export type TextAnchor = {
+  paragraphId: number;
+  start: number;
+  end: number;
+  quote: string;
+  page?: string;
+};
+export type AnswerReference = { title: string; url: string };
+export type ConversationTurn = {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  model?: string;
+  references?: AnswerReference[];
+};
 export type Paragraph = {
   id: number;
   text: string;
   page?: string;
   firstLetterDrop?: boolean;
+  pageEnd?: string;
+  section?: string;
+  kind?:
+    "paragraph" | "heading" | "quote" | "list" | "code" | "table" | "image";
+  href?: string;
 };
 export type Source = {
   id: string;
@@ -36,8 +56,23 @@ export type Source = {
   lastReadAt?: string;
   lastParagraph?: number;
   agentName?: string;
+  tags?: string[];
+  folder?: string;
+  coverUrl?: string;
+  coverImage?: string;
+  language?: string;
+  contentRevision?: number;
+  extraction?: import("../study/document-layout").ExtractionReport;
+  overview?: {
+    summary: string;
+    claims: { text: string; paragraphs: number[] }[];
+    sections: { title: string; start: number; end: number }[];
+    generatedAt: string;
+    model?: string;
+  };
 };
 export type Note = {
+  anchorStatus?: "verified" | "unmatched";
   id: string;
   title: string;
   content: string;
@@ -55,6 +90,7 @@ export type Note = {
   highlights?: string[];
 };
 export type MarginNote = {
+  anchorStatus?: "verified" | "unmatched";
   id: string;
   sourceId: string;
   paragraphId: number;
@@ -70,8 +106,19 @@ export type MarginNote = {
   reminder?: string;
   noteId?: string;
   page?: string;
+  anchors?: TextAnchor[];
+  conversation?: ConversationTurn[];
+  model?: string;
+  action?: string;
+  references?: AnswerReference[];
+  reviewDate?: string;
+  reviewInterval?: number;
+  reviewCount?: number;
+  reviewAnswer?: string;
+  comparisonSourceId?: string;
 };
 export type Card = {
+  anchorStatus?: "verified" | "unmatched";
   id: string;
   frente: string;
   verso: string;
@@ -108,7 +155,7 @@ export type ReviewRecord = {
 };
 export type Settings = {
   theme: Theme;
-  font: "serif" | "sans";
+  font: "serif" | "book" | "sans" | "legible";
   fontSize: number;
   lineHeight: number;
   width: number;
@@ -122,6 +169,11 @@ export type Settings = {
   cloudEnabled: boolean;
   cloudToken: string;
   model: "openai" | "anthropic" | "grok";
+  minimap: boolean;
+  answerLength: "short" | "balanced" | "detailed";
+  answerDepth: "quick" | "deep";
+  webSearch: boolean;
+  speechRate: number;
 };
 export type Tombstone = {
   id: string;
@@ -143,6 +195,7 @@ export type VaultData = {
   profile: Record<string, unknown>;
 };
 export type Selection = {
+  rectTop?: number;
   sourceId: string;
   paragraphId: number;
   text: string;
@@ -151,4 +204,5 @@ export type Selection = {
   left: number;
   top: number;
   page?: string;
+  anchors?: TextAnchor[];
 };

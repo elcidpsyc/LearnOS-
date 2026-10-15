@@ -4,9 +4,11 @@ Biblioteca pessoal para ler, pensar e lembrar. Consolida o protótipo do GitHub,
 
 ## Incluído
 
-- Estante, temas, lista, busca, filtros e contadores derivados do acervo.
-- Leitor editorial com papel/sépia/noite, tipografia, foco e voz do aparelho.
-- Destaques persistidos e notas ancoradas aos parágrafos, com caderno por fonte.
+- Estante com títulos legíveis, capas, temas, lista, pastas, tags, busca e retomada de leituras.
+- Leitor dividido entre texto e margem, seis aparências, quatro famílias tipográficas, foco, minimapa e voz do aparelho.
+- Destaques multicoloridos em vários parágrafos, notas e conversas persistidas, com caderno por fonte e exportação Markdown/ZIP.
+- Explicação, definição, simplificação, tradução sob demanda, comparação entre materiais, referências de parágrafos e visão geral estruturada.
+- Busca externa opcional com fontes recuperadas, revisão diária dos destaques e importação de exports de bookmarks.
 - Notas com claims, comentários, perguntas e citações separados.
 - Revisão com tentativa escrita, histórico e intervalos; conexões editáveis.
 - Recortes, artigos públicos e arquivos PDF/EPUB/DOCX/texto/imagem/áudio/vídeo.
@@ -16,13 +18,13 @@ Biblioteca pessoal para ler, pensar e lembrar. Consolida o protótipo do GitHub,
 
 ## Desenvolvimento
 
-Node 22+ e npm. `npm ci`, `npm run build`, `npm test`.
+Node 24 e npm. `npm ci --ignore-scripts` e `npm run verify`. A verificação executa testes, TypeScript da API e build/TypeScript do frontend; também é o comando de build no Vercel.
 
 O frontend usa Vite. Na Vercel, as funções em `api/` ficam no mesmo domínio. Para desenvolvimento integrado, vincule o projeto correto, configure as variáveis e execute `vercel dev`. O comando `npm run dev` abre só o frontend; as funções online ficam indisponíveis sem o servidor da Vercel.
 
 ## Serviços
 
-O projeto usa Vercel Blob privado para espaços e arquivos, por `BLOB_STORE_ID` com OIDC ou `BLOB_READ_WRITE_TOKEN`. A IA usa OIDC da Vercel ou `AI_GATEWAY_API_KEY` local. A conta precisa permitir chamadas ao AI Gateway. Os modelos foram conferidos no catálogo ao implementar; estão em `server/assistant.ts`.
+O projeto usa Vercel Blob privado para espaços e arquivos, por `BLOB_STORE_ID` com OIDC ou `BLOB_READ_WRITE_TOKEN`. A IA usa OIDC da Vercel ou `AI_GATEWAY_API_KEY` local. A conta precisa permitir chamadas ao AI Gateway. A busca externa usa `EXA_API_KEY` no servidor; sem essa configuração, o aplicativo informa a indisponibilidade e permite continuar sem Web. Os modelos foram conferidos no catálogo ao implementar; estão em `server/assistant.ts`.
 
 Em Meu espaço, crie um espaço privado ou conecte usando a chave de outro aparelho. A chave funciona como uma credencial; guarde-a em local seguro. Ela não é incluída no backup. O acervo continua disponível localmente quando a rede falha. Reabrir o app nunca grava os dados de exemplo antes da hidratação.
 
@@ -30,7 +32,7 @@ Em Meu espaço, crie um espaço privado ou conecte usando a chave de outro apare
 
 Endpoint `/api/mcp`, transporte HTTP, protocolo 2025-03-26. Cabeçalho `Authorization: Bearer <chave privada do espaço>`.
 
-Ferramentas: `list_sources`, `read_source`, `list_notes`, `add_source`, `add_note`. Operações de escrita usam ETags e rejeitam concorrência para preservar alterações. Adições de artigos são deduplicadas pelo endereço original. Não há integração implícita com bookmarks de redes sociais: o agente precisa ter seu próprio acesso à origem dos links.
+Ferramentas: `list_sources`, `read_source`, `list_notes`, `add_source`, `add_note`, `search_library`, `list_topics`, `save_text`, `save_articles`. Operações de escrita usam ETags e rejeitam concorrência para preservar alterações. Adições de artigos são deduplicadas pelo endereço original. Não há integração implícita com bookmarks de redes sociais: o agente precisa ter seu próprio acesso à origem dos links.
 
 ## Limites explícitos
 
@@ -45,3 +47,9 @@ Ferramentas: `list_sources`, `read_source`, `list_notes`, `add_source`, `add_not
 ## Validação
 
 `tests/model.test.ts` cobre preservação/migração de dados, retorno de cartões, mesclagem e remoções, além da proteção da ingestão de URLs. Os fluxos de navegador são verificados com dados locais de teste antes da publicação.
+
+## Adaptação da referência Gloss
+
+O inventário, a origem da referência e os limites da adaptação estão em [docs/gloss-integration.md](docs/gloss-integration.md). A implementação é independente e preserva o modelo de dados do LearnOS.
+
+A conferência e correção manual de arquivos estão em [docs/document-layout.md](docs/document-layout.md). As próximas adaptações e o fluxo de prévia/produção estão em [docs/next-functions.md](docs/next-functions.md).
