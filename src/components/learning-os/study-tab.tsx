@@ -256,7 +256,11 @@ function Reader({ source }: { source: Source }) {
       window.removeEventListener("touchmove", manualScroll);
       document.removeEventListener("pointerdown", manualScroll);
       document.removeEventListener("keydown", scrollingKey);
-      if (readingPosition.current.latest && snapshot().sources.find(s=>s.id===source.id)?.contentRevision===source.contentRevision)
+      if (
+        readingPosition.current.latest &&
+        snapshot().sources.find((s) => s.id === source.id)?.contentRevision ===
+          source.contentRevision
+      )
         updateSource(source.id, {
           lastParagraph: readingPosition.current.latest,
           progress: readingPosition.current.progress,

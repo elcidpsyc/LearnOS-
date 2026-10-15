@@ -39,6 +39,7 @@ export function AddSourceModal({
   };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mode === "file") return;
     setBusy(true);
     setError("");
     try {

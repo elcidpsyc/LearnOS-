@@ -177,3 +177,57 @@ test("reorganização: remapeia seleções entre parágrafos, conserva IDs está
     /preservado/,
   );
 });
+
+test("reorganização não associa um destaque a uma ocorrência ambígua nem apaga seu cartão", () => {
+  const v = freshVault();
+  const stamp = "2026-10-15";
+  const source = {
+    ...v.sources[0],
+    id: "repeated",
+    paragraphs: [{ id: 10, text: "Uma citação repetida." }],
+  };
+  v.sources = [source];
+  v.notes = [];
+  v.marginNotes = [
+    {
+      id: "ambiguous",
+      sourceId: source.id,
+      paragraphId: 10,
+      quote: "citação",
+      type: "highlight",
+      title: "Trecho",
+      content: "Comentário preservado",
+      createdAt: stamp,
+      updatedAt: stamp,
+    },
+  ];
+  v.cards = [
+    {
+      ...v.cards[0],
+      id: "card",
+      fonte: source.id,
+      paragraphId: 10,
+      frente: "Minha pergunta",
+      verso: "Minha resposta",
+    },
+  ];
+  const result = reflowSource(v, source.id, {
+    text: "Uma citação repetida.\n\nOutra citação.",
+    pages: 0,
+    format: "PDF",
+    paragraphs: [
+      { id: 1, text: "Uma citação repetida." },
+      { id: 2, text: "Outra citação." },
+    ],
+  });
+  assert.equal(result.marginNotes[0].anchorStatus, "unmatched");
+  assert.equal(result.marginNotes[0].content, "Comentário preservado");
+  assert.deepEqual(result.marginNotes[0].anchors, []);
+  assert.equal(result.cards[0].paragraphId, 10);
+  assert.equal(result.cards[0].verso, "Minha resposta");
+});
+
+test('PDF: capitular começa a frase e suas linhas envolventes continuam no mesmo parágrafo',()=>{
+  const p:PdfPage={number:1,width:400,height:600,items:[fragment('A',20,130,25,40),fragment('leitura começa pela primeira linha de um texto',50,100,300),fragment('e continua ao redor da capitular sem inverter',50,115,300),fragment('a ordem original das palavras deste parágrafo.',50,130,300),fragment('A linha seguinte mantém a mesma ideia.',30,145,320)]};
+  const read=organizePdf([p]);assert.equal(read.paragraphs[0].kind,'paragraph');assert.match(read.paragraphs[0].text,/^A leitura começa/);assert.match(read.paragraphs[0].text,/primeira linha de um texto e continua/);assert.doesNotMatch(read.text,/\n\nA\n\n/);
+});

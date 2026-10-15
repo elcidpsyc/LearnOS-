@@ -99,6 +99,8 @@ export async function readEpub(
     for (const block of blocks) {
       const clone = block.cloneNode(true) as Element;
       clone.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+      clone.querySelectorAll("p,li,tr").forEach((n) => n.append("\n"));
+      clone.querySelectorAll("td,th").forEach((n) => n.append("  "));
       const tag = block.tagName.toLowerCase();
       const text =
         tag === "pre"

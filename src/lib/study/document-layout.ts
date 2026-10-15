@@ -29,6 +29,7 @@ export type PdfFragment = {
   width: number;
   height: number;
   font?: string;
+  dropCapBottom?: number;
 };
 export type PdfPage = {
   number: number;
@@ -37,6 +38,7 @@ export type PdfPage = {
   items: PdfFragment[];
 };
 type Line = {
+  dropCapBottom?: number;
   text: string;
   x: number;
   right: number;
@@ -76,17 +78,44 @@ function makeLine(items: PdfFragment[]): Line {
     right: Math.max(...items.map((i) => i.x + Math.max(0, i.width))),
     y: median(items.map((i) => i.y)),
     height,
+    dropCapBottom:
+      Math.max(0, ...items.map((i) => i.dropCapBottom ?? 0)) || undefined,
     items,
   };
 }
 export function pdfLines(page: PdfPage): Line[] {
-  const items = page.items
+  let items = page.items
     .filter(
       (i) =>
         i.text.trim() && [i.x, i.y, i.width, i.height].every(Number.isFinite),
     )
     .sort((a, b) => a.y - b.y || a.x - b.x);
   const font = median(items.map((i) => i.height).filter((h) => h > 0)) || 10;
+  // A drop cap's baseline can sit two or three rows below the sentence it begins.
+  items = items
+    .map((item) => {
+      if (
+        item.height < font * 1.85 ||
+        !/^\p{Lu}{1,3}$/u.test(item.text.trim()) ||
+        item.x > page.width * 0.25
+      )
+        return item;
+      const following = items
+        .filter(
+          (other) =>
+            other !== item &&
+            other.height < font * 1.5 &&
+            other.x >= item.x + item.width - font * 0.6 &&
+            other.x < item.x + item.width + font * 3 &&
+            other.y >= item.y - item.height + font * 0.4 &&
+            other.y <= item.y + font * 0.2,
+        )
+        .sort((a, b) => a.y - b.y)[0];
+      return following
+        ? { ...item, y: following.y, height: font, dropCapBottom: item.y }
+        : item;
+    })
+    .sort((a, b) => a.y - b.y || a.x - b.x);
   const rows: PdfFragment[][] = [];
   for (const item of items) {
     // OCR baselines fluctuate within a printed line; the geometry, not draw order, determines its place.
@@ -243,8 +272,12 @@ export function organizePdf(
           ? ordered
           : ordered.filter((l) => l.x < gutter === line.x < gutter);
       const long = columnLines.filter((l) => l.text.length > 40);
-      const left = long.length
-        ? Math.min(...long.map((l) => l.x))
+      const leftEdges = long
+        .filter((l) => !l.dropCapBottom)
+        .map((l) => l.x)
+        .sort((a, b) => a - b);
+      const left = leftEdges.length
+        ? leftEdges[Math.floor((leftEdges.length - 1) * 0.2)]
         : Math.min(...columnLines.map((l) => l.x));
       const right = Math.max(...columnLines.map((l) => l.right));
       const uppercase =
@@ -255,13 +288,32 @@ export function organizePdf(
         (line.height > font * 1.42 && line.text.length < 180) ||
         (uppercase && line.x > left + font * 1.3 && line.text.length < 90);
       const last = blocks.at(-1);
-      const indented = line.x - left > Math.max(3, font * 0.5);
+      const wrappedAroundCap =
+        last?.first.dropCapBottom &&
+        line.y <= last.first.dropCapBottom + font * 0.75;
+      const indented =
+        !wrappedAroundCap && line.x - left > Math.max(3, font * 0.5);
       const columnChange = last && line.y < last.last.y - lineStep;
       const gap = last ? line.y - last.last.y : 0;
       const shortEnding =
         last &&
         last.last.right < right - font * 3 &&
         /[.!?][”"')\]]?$/.test(last.text);
+      if (
+        heading &&
+        last?.kind === "heading" &&
+        gap > 0 &&
+        gap <= lineStep * 1.25 &&
+        Math.abs(line.x + line.right - (last.last.x + last.last.right)) <
+          font * 6 &&
+        Math.max(line.height, last.last.height) /
+          Math.min(line.height, last.last.height) <
+          1.3
+      ) {
+        last.text += " " + line.text;
+        last.last = line;
+        continue;
+      }
       const start =
         !last ||
         heading ||

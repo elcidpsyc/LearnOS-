@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, RefreshCw, ScanText, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useVault, snapshot } from "@/lib/vault/store";
@@ -15,7 +15,7 @@ import {
 } from "@/lib/study/document-layout";
 import { coverThumbnail } from "@/lib/study/epub";
 import { reflowSource } from "@/lib/study/reflow";
-import { Modal, Overline } from "./ui";
+import { Modal } from "./ui";
 
 export function FileImportPanel({
   file,
@@ -30,7 +30,15 @@ export function FileImportPanel({
   folder: string;
   onSaved: (id: string) => void;
 }) {
-  const { addSource, reorganizeSource, updateSource } = useVault((s) => s);
+  const {
+    addSource,
+    reorganizeSource,
+    updateSource,
+    sources,
+    notes,
+    cards,
+    marginNotes,
+  } = useVault((s) => s);
   const [options, setOptions] = useState<ImportOptions>(
     existing?.extraction?.options ?? DEFAULT_IMPORT_OPTIONS,
   );
@@ -102,10 +110,16 @@ export function FileImportPanel({
   };
   const paragraphs =
     read?.paragraphs ?? sourceDraft("", read?.text ?? "").paragraphs;
-  const stats =
-    read && existing && paragraphs.length
-      ? reflowSource(snapshot(), existing.id, read).stats
-      : null;
+  const stats = useMemo(() => {
+    if (
+      !read ||
+      !existing ||
+      !paragraphs.length ||
+      !sources.some((s) => s.id === existing.id)
+    )
+      return null;
+    return reflowSource(snapshot(), existing.id, read).stats;
+  }, [read, existing?.id, sources, notes, cards, marginNotes]);
   const save = async () => {
     if (!read || !title.trim()) return;
     setBusy(true);
