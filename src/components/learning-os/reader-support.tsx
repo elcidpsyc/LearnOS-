@@ -1,3 +1,4 @@
+import { AssistantAccess } from "./assistant-access";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Copy, Download, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -282,11 +283,7 @@ export function MarginConversation({
       )}
       {mark.model && <small className="answer-model">{mark.model}</small>}
       {busy && <Thinking />}
-      {error && (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <AssistantAccess error={error} />}
       {editing && (
         <div className="form-stack">
           <textarea

@@ -16,6 +16,8 @@ import {
 import { coverThumbnail } from "@/lib/study/epub";
 import { reflowSource } from "@/lib/study/reflow";
 import { Modal } from "./ui";
+import { DocumentPreview } from "./document-preview";
+import type { Paragraph } from "@/lib/vault/types";
 
 export function FileImportPanel({
   file,
@@ -49,7 +51,10 @@ export function FileImportPanel({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [page, setPage] = useState(0);
+  const [editingPreview, setEditingPreview] = useState(false);
+  const [manualEdits, setManualEdits] = useState(0);
+  const [previewRevision, setPreviewRevision] = useState(0);
+  const extracted = useRef<FileReadResult | null>(null);
   const [before, setBefore] = useState(false);
   const request = useRef<AbortController | null>(null);
   const pdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
@@ -60,7 +65,9 @@ export function FileImportPanel({
     setBusy(true);
     setRead(null);
     setError("");
-    setPage(0);
+    setManualEdits(0);
+    setEditingPreview(false);
+    setPreviewRevision((v) => v + 1);
     try {
       if (file.size > 120 * 1024 * 1024)
         throw new Error("Importe arquivos de até 120 MB.");
@@ -76,6 +83,7 @@ export function FileImportPanel({
         ? await coverThumbnail(result.cover)
         : undefined;
       if (controller.signal.aborted) return;
+      extracted.current = result;
       setRead(result);
       setCover(thumbnail);
       setTitle(
@@ -173,7 +181,21 @@ export function FileImportPanel({
     }
   };
   const shown = before && existing ? existing.paragraphs : paragraphs;
-  const pageCount = Math.max(1, Math.ceil(shown.length / 12));
+  const revise = (blocks: Paragraph[]) => {
+    if (!read) return;
+    setRead({
+      ...read,
+      paragraphs: blocks,
+      text: blocks.map((p) => p.text).join("\n\n"),
+      report: read.report
+        ? {
+            ...read.report,
+            chapterCount: blocks.filter((p) => p.kind === "heading").length,
+          }
+        : undefined,
+    });
+    setManualEdits((n) => n + 1);
+  };
   return (
     <div className="file-import-panel form-stack">
       <div className="import-file-heading">
@@ -189,50 +211,55 @@ export function FileImportPanel({
         </div>
       </div>
       {pdf && (
-        <fieldset className="import-options">
-          <legend>Como organizar o PDF</legend>
-          <label className="field">
-            Colunas
-            <select
-              value={options.columns}
-              disabled={busy}
-              onChange={(e) =>
-                change({ columns: e.target.value as ImportOptions["columns"] })
-              }
-            >
-              <option value="auto">Detectar automaticamente</option>
-              <option value="single">Uma coluna</option>
-              <option value="double">Duas colunas</option>
-            </select>
-          </label>
-          {(
-            [
-              { key: "joinLines", label: "Unir linhas em parágrafos" },
-              {
-                key: "removeHeaders",
-                label: "Remover cabeçalhos e números repetidos",
-              },
-              {
-                key: "joinHyphens",
-                label: "Recompor palavras partidas no fim da linha",
-              },
-            ] as const
-          ).map((o) => (
-            <label className="toggle-field" key={o.key}>
-              <input
-                type="checkbox"
-                checked={options[o.key]}
+        <details className="extraction-controls" open={!read}>
+          <summary>Ajustes de extração</summary>
+          <fieldset className="import-options">
+            <legend>Como organizar o PDF</legend>
+            <label className="field">
+              Colunas
+              <select
+                value={options.columns}
                 disabled={busy}
-                onChange={(e) => change({ [o.key]: e.target.checked })}
-              />
-              {o.label}
+                onChange={(e) =>
+                  change({
+                    columns: e.target.value as ImportOptions["columns"],
+                  })
+                }
+              >
+                <option value="auto">Detectar automaticamente</option>
+                <option value="single">Uma coluna</option>
+                <option value="double">Duas colunas</option>
+              </select>
             </label>
-          ))}
-          <small>
-            Confira nomes e palavras compostas. A organização usa a camada de
-            texto do PDF; a grafia original não é corrigida automaticamente.
-          </small>
-        </fieldset>
+            {(
+              [
+                { key: "joinLines", label: "Unir linhas em parágrafos" },
+                {
+                  key: "removeHeaders",
+                  label: "Remover cabeçalhos e números repetidos",
+                },
+                {
+                  key: "joinHyphens",
+                  label: "Recompor palavras partidas no fim da linha",
+                },
+              ] as const
+            ).map((o) => (
+              <label className="toggle-field" key={o.key}>
+                <input
+                  type="checkbox"
+                  checked={options[o.key]}
+                  disabled={busy}
+                  onChange={(e) => change({ [o.key]: e.target.checked })}
+                />
+                {o.label}
+              </label>
+            ))}
+            <small>
+              Confira nomes e palavras compostas. A organização usa a camada de
+              texto do PDF; a grafia original não é corrigida automaticamente.
+            </small>
+          </fieldset>
+        </details>
       )}
       {busy ? (
         <p role="status" className="import-progress">
@@ -281,11 +308,31 @@ export function FileImportPanel({
               </>
             )}
           </div>
-          {read.report?.warnings.map((w) => (
-            <p className="import-warning" key={w}>
-              {w}
-            </p>
-          ))}
+          {!!read.report?.emptyPages.length && (
+            <details className="import-warning">
+              <summary>
+                {read.report.emptyPages.length} páginas sem camada de texto ·
+                Conferir
+              </summary>
+              <p>
+                Podem ser folhas em branco, ilustrações ou digitalizações.
+                Confira no original antes de considerar OCR.
+              </p>
+              <small>Páginas: {read.report.emptyPages.join(", ")}</small>
+            </details>
+          )}
+          {read.report?.warnings
+            .filter(
+              (w) =>
+                !w.startsWith(
+                  `${read.report!.emptyPages.length} página(s) sem texto`,
+                ),
+            )
+            .map((w) => (
+              <p className="import-warning" key={w}>
+                {w}
+              </p>
+            ))}
           {existing && (
             <div className="reflow-summary">
               <strong>Seu caderno continua neste material.</strong>
@@ -301,7 +348,7 @@ export function FileImportPanel({
                   className={!before ? "active" : ""}
                   onClick={() => {
                     setBefore(false);
-                    setPage(0);
+                    setEditingPreview(false);
                   }}
                 >
                   Nova organização
@@ -311,7 +358,7 @@ export function FileImportPanel({
                   className={before ? "active" : ""}
                   onClick={() => {
                     setBefore(true);
-                    setPage(0);
+                    setEditingPreview(false);
                   }}
                 >
                   Texto atual
@@ -319,52 +366,32 @@ export function FileImportPanel({
               </div>
             </div>
           )}
-          {!!shown.length && (
-            <section
-              className="import-preview"
-              aria-label={before ? "Texto atual" : "Prévia do texto organizado"}
-            >
-              {shown.slice(page * 12, page * 12 + 12).map((p) => (
-                <div key={p.id}>
-                  <small>
-                    {p.page
-                      ? `Página ${p.page}${p.pageEnd ? `–${p.pageEnd}` : ""}`
-                      : p.section || `¶${p.id}`}
-                  </small>
-                  {p.kind === "heading" ? (
-                    <h3>{p.text}</h3>
-                  ) : (
-                    <p className={p.kind === "quote" ? "preview-quote" : ""}>
-                      {p.text}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </section>
-          )}
-          {!!shown.length && (
-            <div className="preview-pagination">
+          {!!manualEdits && (
+            <div className="preview-edits-summary">
+              <span>{manualEdits} ajustes manuais nesta prévia</span>
               <button
                 type="button"
                 className="text-button"
-                disabled={page === 0}
-                onClick={() => setPage((p) => p - 1)}
+                onClick={() => {
+                  setRead(extracted.current);
+                  setManualEdits(0);
+                  setEditingPreview(false);
+                  setPreviewRevision((v) => v + 1);
+                }}
               >
-                Anterior
-              </button>
-              <span>
-                Trechos {page * 12 + 1}–
-                {Math.min((page + 1) * 12, shown.length)} de {shown.length}
-              </span>
-              <button
-                type="button"
-                className="text-button"
-                disabled={page + 1 >= pageCount}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Próximos
+                Restaurar extração
               </button>
             </div>
+          )}
+          {!!shown.length && (
+            <DocumentPreview
+              key={`${before}:${previewRevision}`}
+              paragraphs={shown}
+              file={file}
+              readOnly={before}
+              onChange={revise}
+              onEditing={setEditingPreview}
+            />
           )}
           {!paragraphs.length && (
             <p className="form-intro">
@@ -372,11 +399,20 @@ export function FileImportPanel({
               texto disponível para o leitor.
             </p>
           )}
+          {editingPreview && (
+            <p className="form-intro">
+              Aplique ou cancele a correção do trecho antes de guardar o
+              material.
+            </p>
+          )}
           <button
             type="button"
             className="button primary"
             disabled={
-              busy || !title.trim() || (!!existing && !paragraphs.length)
+              busy ||
+              editingPreview ||
+              !title.trim() ||
+              (!!existing && !paragraphs.length)
             }
             onClick={() => void save()}
           >

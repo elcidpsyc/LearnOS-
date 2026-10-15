@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Highlighter, Copy, MoreHorizontal, X, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/store";
@@ -11,6 +11,8 @@ import {
 } from "@/lib/study/reader";
 import { Modal } from "./ui";
 import { Thinking, copyText } from "./reader-support";
+import { AssistantAccess } from "./assistant-access";
+import { selectionPosition } from "@/lib/study/selection-position";
 
 export function TranslatorPopup({
   onThinking,
@@ -38,6 +40,41 @@ export function TranslatorPopup({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);
+  const toolsRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ top: 80, left: 12 });
+  useEffect(() => setError(""), [settings.cloudToken]);
+  useLayoutEffect(() => {
+    if (!selection || mode || !toolsRef.current) return;
+    const element = toolsRef.current;
+    const place = () => {
+      const rect = element.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const width = viewport?.width ?? window.innerWidth,
+        height = viewport?.height ?? window.innerHeight;
+      const offsetX = viewport?.offsetLeft ?? 0,
+        offsetY = viewport?.offsetTop ?? 0;
+      const next = selectionPosition(
+        selection,
+        { width: rect.width, height: rect.height },
+        { width, height, left: offsetX, top: offsetY },
+      );
+      setPosition((previous) =>
+        previous.top === next.top && previous.left === next.left
+          ? previous
+          : next,
+      );
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(element);
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+    };
+  }, [selection, mode]);
   useEffect(
     () => () => {
       request.current?.abort();
@@ -230,17 +267,9 @@ export function TranslatorPopup({
     <>
       {!mode && (
         <div
+          ref={toolsRef}
           className="selection-tools"
-          style={{
-            top: Math.max(
-              80,
-              Math.min(selection.top + 10, window.innerHeight - 250),
-            ),
-            left: Math.max(
-              12,
-              Math.min(selection.left, window.innerWidth - 430),
-            ),
-          }}
+          style={position}
           role="toolbar"
           aria-label="Ferramentas do trecho selecionado"
           onMouseDown={(e) => e.preventDefault()}
@@ -329,10 +358,16 @@ export function TranslatorPopup({
           )}
           {busy && <Thinking />}
           {error && (
-            <p className="selection-error" role="alert">
-              {error}
-              <button onClick={() => setMode("note")}>Anotar uma ideia</button>
-            </p>
+            <div className="selection-feedback">
+              <AssistantAccess error={error} />
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setMode("note")}
+              >
+                Anotar uma ideia
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -438,11 +473,7 @@ export function TranslatorPopup({
               </div>
             )}
             {busy && <Thinking />}
-            {error && (
-              <p className="inline-error" role="alert">
-                {error}
-              </p>
-            )}
+            {error && <AssistantAccess error={error} />}
             <button
               className="button primary"
               disabled={

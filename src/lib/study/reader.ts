@@ -142,6 +142,7 @@ export function captureReadingSelection(
     anchors,
     left: rect.left,
     top: rect.bottom,
+    rectTop: rect.top,
   };
 }
 export function readingContext(

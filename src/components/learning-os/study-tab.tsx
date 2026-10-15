@@ -39,6 +39,7 @@ import { ReaderSettings } from "./reader-settings";
 import { TranslatorPopup } from "./translator-popup";
 import { AddSourceModal } from "./add-source-modal";
 import { ReorganizeSourceModal } from "./file-import-panel";
+import { AssistantAccess } from "./assistant-access";
 import { Empty, Modal, Overline } from "./ui";
 import {
   AnswerText,
@@ -780,11 +781,7 @@ function Reader({ source }: { source: Source }) {
                 <ArrowRight size={13} />
               </button>
             )}
-            {briefError && (
-              <p className="inline-error" role="alert">
-                {briefError}
-              </p>
-            )}
+            {briefError && <AssistantAccess error={briefError} />}
           </div>
         )}
       </section>
@@ -982,11 +979,7 @@ function Reader({ source }: { source: Source }) {
           </button>
         </form>
         {busy && <Thinking />}
-        {error && (
-          <p className="inline-error" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <AssistantAccess error={error} />}
       </div>
       {preferences && <ReaderSettings close={() => setPreferences(false)} />}
       {reorganizing && (

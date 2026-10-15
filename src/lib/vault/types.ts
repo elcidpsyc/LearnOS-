@@ -195,6 +195,7 @@ export type VaultData = {
   profile: Record<string, unknown>;
 };
 export type Selection = {
+  rectTop?: number;
   sourceId: string;
   paragraphId: number;
   text: string;

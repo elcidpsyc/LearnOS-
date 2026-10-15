@@ -18,7 +18,7 @@ Biblioteca pessoal para ler, pensar e lembrar. Consolida o protótipo do GitHub,
 
 ## Desenvolvimento
 
-Node 24 e npm. `npm ci`, `npm run build`, `npm test`.
+Node 24 e npm. `npm ci --ignore-scripts` e `npm run verify`. A verificação executa testes, TypeScript da API e build/TypeScript do frontend; também é o comando de build no Vercel.
 
 O frontend usa Vite. Na Vercel, as funções em `api/` ficam no mesmo domínio. Para desenvolvimento integrado, vincule o projeto correto, configure as variáveis e execute `vercel dev`. O comando `npm run dev` abre só o frontend; as funções online ficam indisponíveis sem o servidor da Vercel.
 
@@ -51,3 +51,5 @@ Ferramentas: `list_sources`, `read_source`, `list_notes`, `add_source`, `add_not
 ## Adaptação da referência Gloss
 
 O inventário, a origem da referência e os limites da adaptação estão em [docs/gloss-integration.md](docs/gloss-integration.md). A implementação é independente e preserva o modelo de dados do LearnOS.
+
+A conferência e correção manual de arquivos estão em [docs/document-layout.md](docs/document-layout.md). As próximas adaptações e o fluxo de prévia/produção estão em [docs/next-functions.md](docs/next-functions.md).

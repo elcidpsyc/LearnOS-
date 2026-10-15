@@ -25,3 +25,9 @@ Os títulos completos continuam visíveis nas legendas e nas ações acessíveis
 `npm test`, `npm run build` e `npx tsc --noEmit -p api/tsconfig.json`.
 
 Para conferir um arquivo real sem adicioná-lo ao repositório: `node --import tsx scripts/check-document.ts /caminho/livro.pdf` (também aceita EPUB). O diagnóstico imprime metadados, relatório, amostras e páginas identificadas como duas colunas. Não inclui os livros no Git.
+
+## Refinamento da conferência
+
+A prévia agora agrupa PDF por página física e divide seções longas de EPUB em lotes legíveis. O cabeçalho aparece uma vez, há salto direto de página/seção e um acesso ao original. Páginas sem texto são listadas em um aviso expansível; folhas vazias não são automaticamente classificadas como erro de OCR.
+
+No lápis de cada bloco é possível corrigir texto, mudar entre título/parágrafo/citação/lista/código/tabela, unir ao próximo bloco da mesma página/seção ou ignorar um ruído. Essas alterações permanecem na prévia até guardar/aplicar. **Restaurar extração** desfaz todas as correções dessa sessão. O arquivo original é preservado; textos antigos com notas passam pelo mesmo remapeamento e sinalização de referências não localizadas.

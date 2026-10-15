@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 3000",
     "build": "tsc --noEmit && vite build",
+    "check:api": "tsc --noEmit -p api/tsconfig.json",
+    "verify": "npm test && npm run check:api && npm run build",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts"

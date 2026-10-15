@@ -7,6 +7,8 @@ export type AiStatus = {
   message?: string;
   webSearch?: boolean;
 };
+export const WORKSPACE_REQUIRED_MESSAGE =
+  "Conecte seu espaço privado em Meu espaço para usar o assistente.";
 export type AssistMode =
   | "ask"
   | "translate"
@@ -62,6 +64,9 @@ export async function assist(
   } = {},
 ): Promise<AssistResult> {
   const data = snapshot();
+  options.signal?.throwIfAborted();
+  if (!/^[a-f0-9]{64}$/.test(data.settings.cloudToken))
+    throw new Error(WORKSPACE_REQUIRED_MESSAGE);
   const r = await fetch("/api/assist", {
     method: "POST",
     headers: {
@@ -79,12 +84,10 @@ export async function assist(
       depth: options.depth ?? data.settings.answerDepth,
       length: data.settings.answerLength,
       web: options.web ?? false,
-      history: (options.history ?? [])
-        .slice(-12)
-        .map(({ role, content }) => ({
-          role,
-          content: content.slice(0, 12000),
-        })),
+      history: (options.history ?? []).slice(-12).map(({ role, content }) => ({
+        role,
+        content: content.slice(0, 12000),
+      })),
     }),
     signal: options.signal,
   });
